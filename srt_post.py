@@ -69,7 +69,7 @@ def reassemble_files(translated_blob: dict, meta: dict, files: list):
                 blocks.append({
                     "start": m["start"],
                     "end": m["end"],
-                    "text": m["text"],
+                    "text": RLM + m["text"],
                     "block_idx": m["block_idx"],
                 })
                 untranslated.append((tag, m["text"]))
