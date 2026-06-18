@@ -6,6 +6,7 @@ reported as skipped (partial). Output cues are renumbered 1..N, so any cues that
 were dropped upstream (single-char noise) simply don't appear.
 """
 import pysubs2
+from pathlib import Path
 
 from config import cfg
 from logger import log
@@ -13,9 +14,6 @@ from logger import log
 
 def _resolve_output_path(base_path) -> Path:
     """Handle file conflict based on cfg['FILE_CONFLICT'] setting."""
-    from pathlib import Path
-    out_path = Path(str(base_path).rsplit(".", 1)[0] + ".ar.srt") if not str(base_path).endswith(".ar.srt") else base_path
-    # Build proper output path
     fpath = Path(str(base_path))
     # Strip language suffix and extension, add .ar.srt
     stem = fpath.stem
