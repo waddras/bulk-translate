@@ -45,11 +45,13 @@ def reassemble_files(translated_blob: dict, meta: dict, files: list):
 
         blocks.sort(key=lambda b: b["block_idx"])
         out_path = fpath.with_suffix(".ar.srt")
+        RLM = "\u200F"
         srt_lines = []
         for i, block in enumerate(blocks, start=1):
             s = pysubs2.time.ms_to_str(block["start"], fractions=True).replace(".", ",")
             e = pysubs2.time.ms_to_str(block["end"],   fractions=True).replace(".", ",")
-            srt_lines.append(f"{i}\n{s} --> {e}\n{block['text']}\n")
+            text = RLM + block["text"]
+            srt_lines.append(f"{i}\n{s} --> {e}\n{text}\n")
         out_path.write_text("\n".join(srt_lines), encoding="utf-8")
         log.info(f"  Written: {out_path.name} ({len(blocks)} cues)")
         completed.append(out_path.name)

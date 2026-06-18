@@ -30,10 +30,10 @@ DEFAULT_SETTINGS = {
     "CHUNK_OUTPUT_TOKENS":      6000,   # our splitter threshold (0 = split only by CHUNK_SIZE)
     "GEMINI_MAX_OUTPUT_TOKENS": 0,      # sent as maxOutputTokens (0 = omit, use model default)
     "MODEL_POOL": [
-        {"id": "gemini-3.5-flash",      "rpd": 20,  "rpm": 5},
-        {"id": "gemini-2.5-flash",      "rpd": 20,  "rpm": 5},
-        {"id": "gemini-2.5-flash-lite", "rpd": 20,  "rpm": 10},
-        {"id": "gemini-3.1-flash-lite", "rpd": 500, "rpm": 15},
+        {"id": "gemini-3.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 1},
+        {"id": "gemini-2.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 2},
+        {"id": "gemini-2.5-flash-lite", "rpd": 20,  "rpm": 10, "priority": 3},
+        {"id": "gemini-3.1-flash-lite", "rpd": 500, "rpm": 15, "priority": 4},
     ],
 }
 

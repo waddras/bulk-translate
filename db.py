@@ -5,10 +5,27 @@ Shares /opt/bazarr-translator/usage.db with the bazarr-translator service.
 Reads MODEL_POOL / OOS_THRESHOLD from the live cfg at call-time.
 """
 import sqlite3
-from datetime import date
+from datetime import datetime, timezone, timedelta
 
 from config import cfg, DB_PATH
 from logger import log
+
+# Quota resets at 10:30 AM Asia/Qatar (UTC+3). Before 10:30 we're still in
+# the previous day's quota window.
+_QATAR_OFFSET = timezone(timedelta(hours=3))
+_RESET_HOUR   = 10
+_RESET_MINUTE = 30
+
+
+def day_key() -> str:
+    """Return the current quota-period date string (YYYY-MM-DD).
+
+    If it's before 10:30 AM Qatar time, we're still in yesterday's window.
+    """
+    now = datetime.now(_QATAR_OFFSET)
+    if (now.hour, now.minute) < (_RESET_HOUR, _RESET_MINUTE):
+        now = now - timedelta(days=1)
+    return now.strftime("%Y-%m-%d")
 
 
 # ── Schema ───────────────────────────────────────────────────────────────────
@@ -65,7 +82,7 @@ def add_key(email: str, api_key: str) -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT INTO api_keys (email, api_key, active, added) VALUES (?,?,1,?)",
-            (email, api_key, date.today().isoformat()),
+            (email, api_key, day_key()),
         )
         conn.commit()
 
@@ -98,12 +115,20 @@ def _get_usage_row(model_id: str, day: str) -> dict:
 
 
 def get_all_usage() -> list:
-    today = date.today().isoformat()
+    today = day_key()
+    # compute next reset time for display
+    now = datetime.now(_QATAR_OFFSET)
+    reset_today = now.replace(hour=_RESET_HOUR, minute=_RESET_MINUTE, second=0, microsecond=0)
+    if now >= reset_today:
+        next_reset = reset_today + timedelta(days=1)
+    else:
+        next_reset = reset_today
     result = []
-    for model in cfg["MODEL_POOL"]:
+    for model in sorted(cfg["MODEL_POOL"], key=lambda m: m.get("priority", 99)):
         row = _get_usage_row(model["id"], today)
         result.append({
             "model":          model["id"],
+            "priority":       model.get("priority", 99),
             "rpd_limit":      model["rpd"],
             "used_today":     row["requests"],
             "remaining":      max(0, model["rpd"] - row["requests"]),
@@ -114,8 +139,19 @@ def get_all_usage() -> list:
     return result
 
 
+def get_usage_meta() -> dict:
+    """Return quota-period metadata for display in the UI."""
+    now = datetime.now(_QATAR_OFFSET)
+    reset_today = now.replace(hour=_RESET_HOUR, minute=_RESET_MINUTE, second=0, microsecond=0)
+    next_reset = reset_today + timedelta(days=1) if now >= reset_today else reset_today
+    return {
+        "day_key":    day_key(),
+        "next_reset": next_reset.strftime("%Y-%m-%d %H:%M AST"),
+    }
+
+
 def increment_usage(model_id: str) -> None:
-    today = date.today().isoformat()
+    today = day_key()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
             INSERT INTO usage (model, day, requests) VALUES (?,?,1)
@@ -126,7 +162,7 @@ def increment_usage(model_id: str) -> None:
 
 def increment_failures(model_id: str) -> int:
     """Bump the daily failure count; mark OOS once it reaches OOS_THRESHOLD."""
-    today = date.today().isoformat()
+    today = day_key()
     threshold = cfg["OOS_THRESHOLD"]
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
@@ -148,10 +184,10 @@ def increment_failures(model_id: str) -> int:
 
 
 def get_available_model(skip: set = None) -> dict | None:
-    """First model (in pool priority order) that isn't OOS, RPD-exhausted, or skipped."""
+    """Lowest-priority-number model that isn't OOS, RPD-exhausted, or skipped."""
     skip = skip or set()
-    today = date.today().isoformat()
-    for model in cfg["MODEL_POOL"]:
+    today = day_key()
+    for model in sorted(cfg["MODEL_POOL"], key=lambda m: m.get("priority", 99)):
         mid = model["id"]
         if mid in skip:
             continue
@@ -163,7 +199,7 @@ def get_available_model(skip: set = None) -> dict | None:
 
 
 def reset_oos(model_id: str) -> None:
-    today = date.today().isoformat()
+    today = day_key()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             "UPDATE usage SET out_of_service=0, failures=0 WHERE model=? AND day=?",
@@ -173,7 +209,7 @@ def reset_oos(model_id: str) -> None:
 
 
 def reset_usage(model_id: str) -> None:
-    today = date.today().isoformat()
+    today = day_key()
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             "UPDATE usage SET requests=0, failures=0, out_of_service=0 WHERE model=? AND day=?",

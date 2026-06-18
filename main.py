@@ -5,7 +5,6 @@ All logic lives in the sibling modules; this file just wires HTTP endpoints to
 them. Run with:  uvicorn main:app --host 0.0.0.0 --port 8091
 """
 import sqlite3
-from datetime import date
 from pathlib import Path
 from typing import List
 
@@ -51,7 +50,12 @@ async def startup():
 
 @app.get("/api/usage")
 async def api_usage():
-    return JSONResponse({"date": date.today().isoformat(), "models": db.get_all_usage()})
+    meta = db.get_usage_meta()
+    return JSONResponse({
+        "date":       meta["day_key"],
+        "next_reset": meta["next_reset"],
+        "models":     db.get_all_usage(),
+    })
 
 
 @app.post("/api/usage/{model_id}/reset-oos")
