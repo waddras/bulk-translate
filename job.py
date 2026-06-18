@@ -158,6 +158,7 @@ async def run_translate() -> None:
                 if logger.is_cancelled():
                     jlog(f"CANCELLED after chunk {i - 1}/{len(chunks)}")
                     break
+
                 result = await ai.translate_chunk(
                     client, chunk, i, len(chunks), api_keys, key_idx_ref
                 )
@@ -165,7 +166,51 @@ async def run_translate() -> None:
                     translated_unique.update(result)
                     jlog(f"  Chunk {i}/{len(chunks)} - {len(result)} unique lines translated")
                 else:
-                    jlog(f"  Chunk {i}/{len(chunks)} - FAILED or cancelled, skipping")
+                    jlog(f"  Chunk {i}/{len(chunks)} - FAILED or cancelled")
+                    result = {}
+
+                # CHECK: verify all sent keys came back
+                sent_keys = set(chunk.keys())
+                returned_keys = set(result.keys()) if result else set()
+                missing_keys = sent_keys - returned_keys
+
+                if not missing_keys:
+                    jlog(f"  Chunk {i}/{len(chunks)} - verification OK, all lines returned")
+                elif i < len(chunks):
+                    # Append missing to next chunk
+                    jlog(f"  Chunk {i}/{len(chunks)} - {len(missing_keys)} lines missing:")
+                    for mk in sorted(missing_keys):
+                        jlog(f"    [{mk}] \"{chunk[mk]}\"")
+                    jlog(f"  -> Appending {len(missing_keys)} missing lines to chunk {i+1}")
+                    for mk in missing_keys:
+                        chunks[i][mk] = chunk[mk]  # chunks is 0-indexed, i is next
+                else:
+                    # Last chunk - do a single retry from priority 1
+                    jlog(f"  Chunk {i}/{len(chunks)} (last) - {len(missing_keys)} lines missing:")
+                    for mk in sorted(missing_keys):
+                        jlog(f"    [{mk}] \"{chunk[mk]}\"")
+                    jlog(f"  -> Sending retry chunk ({len(missing_keys)} lines) from priority 1...")
+                    retry_chunk = {mk: chunk[mk] for mk in missing_keys}
+                    retry_key_idx = [0]  # fresh start from priority 1
+                    retry_result = await ai.translate_chunk(
+                        client, retry_chunk, len(chunks) + 1, len(chunks) + 1,
+                        api_keys, retry_key_idx
+                    )
+                    if retry_result:
+                        translated_unique.update(retry_result)
+                        still_missing = missing_keys - set(retry_result.keys())
+                        if still_missing:
+                            jlog(f"  Retry recovered {len(retry_result)} lines, "
+                                 f"{len(still_missing)} still untranslated (keeping original):")
+                            for sm in sorted(still_missing):
+                                jlog(f"    [{sm}] \"{chunk[sm]}\"")
+                        else:
+                            jlog(f"  Retry recovered all {len(retry_result)} missing lines")
+                    else:
+                        jlog(f"  Retry FAILED - {len(missing_keys)} lines will keep original text:"
+                        )
+                        for mk in sorted(missing_keys):
+                            jlog(f"    [{mk}] \"{chunk[mk]}\"")
 
         cancelled = logger.is_cancelled()
         if cancelled:
@@ -176,17 +221,18 @@ async def run_translate() -> None:
         jlog(SEP)
         jlog("PHASE 4 - Reassembling output files...")
         translated_blob = blob.expand_translations(translated_unique, meta)
-        completed, skipped = srt_post.reassemble_files(translated_blob, meta, files)
+        completed, warnings = srt_post.reassemble_files(translated_blob, meta, files)
         logger.set_completed(completed)
-        logger.set_skipped(skipped)
+        logger.set_skipped(warnings)
 
         jlog(SEP)
         jlog(f"{'CANCELLED' if cancelled else 'COMPLETE'} - "
-             f"{len(completed)} files written, {len(skipped)} skipped")
+             f"{len(completed)} files written" +
+             (f", {len(warnings)} with warnings" if warnings else ""))
         for f in completed:
             jlog(f"  done: {f}")
-        for f in skipped:
-            jlog(f"  skipped: {f} (partial or no translation)")
+        for w in warnings:
+            jlog(f"  warning: {w}")
 
         # Invalidate analyze after successful translate
         if not cancelled:

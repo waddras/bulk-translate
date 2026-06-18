@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Reassemble translated cues back into per-file .ar.srt outputs.
 
-A file is only written if EVERY one of its cues was translated; otherwise it is
-reported as skipped (partial). Output cues are renumbered 1..N, so any cues that
-were dropped upstream (single-char noise) simply don't appear.
+Never skips a file. If some cues are untranslated, uses the original English
+text and reports the count. Output cues are renumbered 1..N.
 """
 import pysubs2
 from pathlib import Path
@@ -12,13 +11,14 @@ from config import cfg
 from logger import log
 
 
+RLM = "\u200F"
+
+
 def _resolve_output_path(base_path) -> Path:
     """Handle file conflict based on cfg['FILE_CONFLICT'] setting."""
     fpath = Path(str(base_path))
-    # Strip language suffix and extension, add .ar.srt
     stem = fpath.stem
-    # Remove .en or .eng suffix if present
-    for suffix in (".en", ".eng"):
+    for suffix in (".en", ".eng", ".en.hi"):
         if stem.endswith(suffix):
             stem = stem[:-len(suffix)]
             break
@@ -33,49 +33,67 @@ def _resolve_output_path(base_path) -> Path:
 
 
 def reassemble_files(translated_blob: dict, meta: dict, files: list):
-    """Write .ar.srt next to each fully-translated source file.
+    """Write .ar.srt for every file. Untranslated cues keep original text.
 
-    Returns (completed_names, skipped_names).
+    Returns (completed_names, warnings_list).
     """
-    file_blocks = {i + 1: [] for i in range(len(files))}
-    for tag, arabic in translated_blob.items():
-        m = meta.get(tag)
-        if m is None:
-            log.warning(f"Tag {tag} missing from meta - skipping")
-            continue
-        file_blocks[m["file_idx"]].append({
-            "start":     m["start"],
-            "end":       m["end"],
-            "text":      arabic,
-            "block_idx": m["block_idx"],
-        })
+    # Group all meta entries by file
+    file_cues = {i + 1: [] for i in range(len(files))}
+    for tag, m in meta.items():
+        file_cues[m["file_idx"]].append((tag, m))
 
-    completed, skipped = [], []
-    for file_idx, blocks in file_blocks.items():
+    completed, warnings = [], []
+
+    for file_idx, cues in file_cues.items():
         fpath = files[file_idx - 1]
-
-        if not blocks:
-            log.warning(f"  No translated cues for {fpath.name} - skipping")
-            skipped.append(fpath.name)
+        if not cues:
+            log.warning(f"  No cues for {fpath.name} - skipping (empty)")
+            warnings.append(f"{fpath.name}: no cues found")
             continue
 
-        expected = sum(1 for m in meta.values() if m["file_idx"] == file_idx)
-        if len(blocks) < expected:
-            log.warning(f"  {fpath.name}: only {len(blocks)}/{expected} cues translated - skipping (partial)")
-            skipped.append(fpath.name)
-            continue
+        cues.sort(key=lambda x: x[1]["block_idx"])
+        untranslated = []
+        blocks = []
 
-        blocks.sort(key=lambda b: b["block_idx"])
+        for tag, m in cues:
+            arabic = translated_blob.get(tag)
+            if arabic is not None:
+                blocks.append({
+                    "start": m["start"],
+                    "end": m["end"],
+                    "text": RLM + arabic,
+                    "block_idx": m["block_idx"],
+                })
+            else:
+                # Keep original text
+                blocks.append({
+                    "start": m["start"],
+                    "end": m["end"],
+                    "text": m["text"],
+                    "block_idx": m["block_idx"],
+                })
+                untranslated.append((tag, m["text"]))
+
         out_path = _resolve_output_path(fpath)
-        RLM = "\u200F"
         srt_lines = []
         for i, block in enumerate(blocks, start=1):
             s = pysubs2.time.ms_to_str(block["start"], fractions=True).replace(".", ",")
-            e = pysubs2.time.ms_to_str(block["end"],   fractions=True).replace(".", ",")
-            text = RLM + block["text"]
-            srt_lines.append(f"{i}\n{s} --> {e}\n{text}\n")
+            e = pysubs2.time.ms_to_str(block["end"], fractions=True).replace(".", ",")
+            srt_lines.append(f"{i}\n{s} --> {e}\n{block['text']}\n")
         out_path.write_text("\n".join(srt_lines), encoding="utf-8")
-        log.info(f"  Written: {out_path.name} ({len(blocks)} cues)")
+
+        if untranslated:
+            log.warning(f"  {out_path.name}: {len(blocks) - len(untranslated)}/{len(blocks)} "
+                        f"translated, {len(untranslated)} kept as original:")
+            for tag, text in untranslated[:10]:
+                log.warning(f"    [{tag}] \"{text}\"")
+            if len(untranslated) > 10:
+                log.warning(f"    ... and {len(untranslated) - 10} more")
+            warnings.append(f"{out_path.name}: {len(untranslated)} lines untranslated")
+            log.info(f"  Written: {out_path.name} ({len(blocks)} cues, {len(untranslated)} original)")
+        else:
+            log.info(f"  Written: {out_path.name} ({len(blocks)} cues)")
+
         completed.append(out_path.name)
 
-    return completed, skipped
+    return completed, warnings
