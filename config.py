@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Configuration: paths, default settings, and live (mutable) cfg dict.
+
+This module is a leaf — it must not import any of our other modules so it can
+be safely imported everywhere. `cfg` is mutated IN PLACE (never rebound) so
+that every module reading `config.cfg[...]` at call-time always sees the
+latest values after a settings update.
+"""
+import os
+import json
+import logging
+from pathlib import Path
+
+log = logging.getLogger("bulk-translate.config")
+
+# ── Paths ────────────────────────────────────────────────────────────────────
+GEMINI_API_KEY_ENV = os.environ.get("GEMINI_API_KEY", "")
+DB_PATH       = "/opt/bazarr-translator/usage.db"
+BULK_DIR      = "/opt/bulk-translate"
+SETTINGS_PATH = "/opt/bulk-translate/settings.json"
+
+# ── Defaults ──────────────────────────────────────────────────────────────────
+DEFAULT_SETTINGS = {
+    "CHUNK_SIZE":               300,    # max blocks per chunk (0 = no block-count limit)
+    "CHARS_PER_TOKEN":          3,      # rough chars->tokens divisor for estimates
+    "OOS_THRESHOLD":            2,      # retry-exhaustions/day before a model is marked OOS
+    "RETRY_ATTEMPTS":           5,
+    "RETRY_COOLDOWN":           10,     # seconds between retries
+    "MAX_BLOB_LINES":           10000,  # sanity cap on total cues per job
+    "CHUNK_OUTPUT_TOKENS":      6000,   # our splitter threshold (0 = split only by CHUNK_SIZE)
+    "GEMINI_MAX_OUTPUT_TOKENS": 0,      # sent as maxOutputTokens (0 = omit, use model default)
+    "MODEL_POOL": [
+        {"id": "gemini-3.5-flash",      "rpd": 20,  "rpm": 5},
+        {"id": "gemini-2.5-flash",      "rpd": 20,  "rpm": 5},
+        {"id": "gemini-2.5-flash-lite", "rpd": 20,  "rpm": 10},
+        {"id": "gemini-3.1-flash-lite", "rpd": 500, "rpm": 15},
+    ],
+}
+
+
+def load_settings() -> dict:
+    """Load settings.json merged over DEFAULT_SETTINGS (defaults fill any gaps)."""
+    merged = json.loads(json.dumps(DEFAULT_SETTINGS))  # deep copy
+    try:
+        if Path(SETTINGS_PATH).exists():
+            with open(SETTINGS_PATH) as f:
+                merged.update(json.load(f))
+    except Exception as e:
+        log.warning(f"Failed to load settings ({e}); using defaults")
+    return merged
+
+
+def save_settings(s: dict) -> None:
+    Path(SETTINGS_PATH).parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_PATH, "w") as f:
+        json.dump(s, f, indent=2)
+
+
+# Live config object. IMPORTANT: mutate in place via update_settings(), never rebind.
+cfg = load_settings()
+
+
+def update_settings(new_values: dict) -> dict:
+    """Mutate cfg in place and persist. Returns the live cfg."""
+    cfg.update(new_values)
+    save_settings(cfg)
+    log.info("Settings updated and saved")
+    return cfg

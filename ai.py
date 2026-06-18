@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Gemini translation call with retry, model fallback, and OOS handling.
+
+Attempt-level detail goes to the python logger (journalctl) to keep the
+web-visible job log readable; job.py emits the high-level per-chunk summaries.
+"""
+import asyncio
+import json
+
+import httpx
+import json_repair
+
+from config import cfg
+from logger import log, is_cancelled
+import db
+from blob import estimate_output_tokens
+
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+_PROMPT_HEADER = (
+    "You are a professional English to Arabic subtitle translator.\n"
+    "Translate each value in the following JSON object to Arabic.\n"
+    "Return a valid JSON object with the EXACT same keys and ONLY Arabic values.\n"
+    "Place punctuation at the END of each Arabic line. No extra keys or explanation.\n\n"
+)
+
+
+def _generation_config() -> dict:
+    gen = {"temperature": 0.1, "responseMimeType": "application/json"}
+    max_out = cfg.get("GEMINI_MAX_OUTPUT_TOKENS", 0)
+    if max_out and max_out > 0:
+        gen["maxOutputTokens"] = max_out
+    return gen
+
+
+async def translate_chunk(client: httpx.AsyncClient, chunk: dict, chunk_num: int,
+                          total: int, api_keys: list, key_idx_ref: list) -> dict | None:
+    """Translate one chunk. Returns {key: arabic} or None on cancel/total failure."""
+    est = estimate_output_tokens(chunk)
+    log.info(f"CHUNK {chunk_num}/{total} - {len(chunk)} lines - est. ~{est} output tokens")
+
+    prompt = _PROMPT_HEADER + json.dumps(chunk, ensure_ascii=False)
+    gen_cfg = _generation_config()
+
+    retry_attempts = cfg["RETRY_ATTEMPTS"]
+    retry_cooldown = cfg["RETRY_COOLDOWN"]
+    failed_models: set = set()
+
+    while True:
+        if is_cancelled():
+            log.info(f"CHUNK {chunk_num}/{total} - cancelled before model selection")
+            return None
+
+        model = db.get_available_model(skip=failed_models)
+        if model is None:
+            log.warning(f"CHUNK {chunk_num}/{total} - all models OOS/exhausted - sleeping 60s")
+            failed_models.clear()
+            await asyncio.sleep(60)
+            continue
+
+        model_id = model["id"]
+        url = f"{GEMINI_BASE}/{model_id}:generateContent"
+        key_entry = api_keys[key_idx_ref[0] % len(api_keys)]
+        key_idx_ref[0] += 1
+        log.info(f"CHUNK {chunk_num}/{total} - model: {model_id} - key: {key_entry['email']}")
+
+        for attempt in range(1, retry_attempts + 1):
+            if is_cancelled():
+                log.info(f"CHUNK {chunk_num}/{total} - cancelled during attempt {attempt}")
+                return None
+            try:
+                log.info(f"CHUNK {chunk_num}/{total} - [{model_id}] attempt {attempt}/{retry_attempts}")
+                response = await client.post(
+                    url,
+                    headers={"x-goog-api-key": key_entry["api_key"]},
+                    json={"contents": [{"parts": [{"text": prompt}]}],
+                          "generationConfig": gen_cfg},
+                    timeout=300.0,
+                )
+                if response.status_code == 404:
+                    log.warning(f"[{model_id}] 404 dead endpoint - skipping")
+                    db.increment_failures(model_id)
+                    failed_models.add(model_id)
+                    break
+                response.raise_for_status()
+                raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                result = json_repair.loads(raw)
+                db.increment_usage(model_id)
+                log.info(f"CHUNK {chunk_num}/{total} - [{model_id}] SUCCESS ({len(result)} keys)")
+                return result
+
+            except httpx.HTTPStatusError as e:
+                code = e.response.status_code
+                if code == 404:
+                    log.warning(f"[{model_id}] 404 - skipping permanently")
+                    db.increment_failures(model_id)
+                    failed_models.add(model_id)
+                    break
+                log.warning(f"CHUNK {chunk_num}/{total} - [{model_id}] attempt {attempt} HTTP {code}")
+                if attempt < retry_attempts:
+                    log.info(f"Retrying in {retry_cooldown}s...")
+                    await asyncio.sleep(retry_cooldown)
+                else:
+                    f = db.increment_failures(model_id)
+                    log.warning(f"[{model_id}] exhausted retries (failure #{f}) - next model")
+                    failed_models.add(model_id)
+
+            except Exception as e:
+                log.warning(f"CHUNK {chunk_num}/{total} - [{model_id}] attempt {attempt} FAILED: {e}")
+                if attempt < retry_attempts:
+                    log.info(f"Retrying in {retry_cooldown}s...")
+                    await asyncio.sleep(retry_cooldown)
+                else:
+                    f = db.increment_failures(model_id)
+                    log.warning(f"[{model_id}] exhausted retries (failure #{f}) - next model")
+                    failed_models.add(model_id)
