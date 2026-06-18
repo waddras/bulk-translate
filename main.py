@@ -126,6 +126,16 @@ async def api_cancel_job():
     return {"ok": True, "message": "Cancel signal sent"}
 
 
+@app.post("/api/job/force-kill")
+async def api_force_kill():
+    """Force restart the service via systemctl. Nuclear option."""
+    import subprocess
+    logger.log.warning("FORCE KILL requested by user — restarting service")
+    # This kills our own process; systemd will restart it
+    subprocess.Popen(["systemctl", "restart", "bulk-translate"])
+    return {"ok": True, "message": "Service restarting"}
+
+
 @app.post("/api/analyze")
 async def api_analyze(payload: TranslationRequest, background_tasks: BackgroundTasks):
     if logger.is_running():

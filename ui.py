@@ -92,6 +92,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .dot{width:9px;height:9px;border-radius:50%}.dot-green{background:var(--green);box-shadow:0 0 6px var(--green)}.dot-yellow{background:var(--yellow);animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .toast{position:fixed;bottom:20px;right:20px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:12px 18px;border-radius:8px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;box-shadow:0 4px 12px rgba(0,0,0,.4)}.toast.show{opacity:1}
+.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:400px;width:90%;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+.modal-box h3{font-size:15px;margin-bottom:10px}
+.modal-box p{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:16px}
+.modal-box .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end}
+.modal-actions button{padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}
+.kill-btn{background:var(--red);color:#fff;border:none}
+.kill-btn:hover{background:#dc2626}
+.wait-btn{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.wait-btn:hover{border-color:var(--accent)}
 </style></head>
 <body>
 <div class="layout">
@@ -163,6 +175,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 </div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="modal" id="cancel-modal">
+  <div class="modal-box">
+    <h3>Cancelling Job</h3>
+    <p><span class="spinner"></span>Saving translated subtitles from completed chunks... This may take a moment while the current chunk finishes.</p>
+    <div class="modal-actions">
+      <button class="wait-btn" onclick="document.getElementById('cancel-modal').style.display='none'">Wait</button>
+      <button class="kill-btn" onclick="forceKill()">Kill Process Now</button>
+    </div>
+  </div>
+</div>
 <script>
 let selected=[],currentPath='/mnt/secure/srv/hddmedia/anime',pollTimer=null,jobRunning=false,translatePhase=false;
 function toast(msg,ok=true){const el=document.getElementById('toast');el.textContent=msg;el.style.borderColor=ok?'var(--green)':'var(--red)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3500);}
@@ -228,9 +250,16 @@ async function runTranslate(){
   else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);translatePhase=false;document.getElementById('translate-btn').disabled=false;}
 }
 async function cancelJob(){
+  document.getElementById('cancel-btn').disabled=true;
+  document.getElementById('cancel-modal').style.display='flex';
   const res=await fetch('/api/job/cancel',{method:'POST'});
-  if(res.ok)toast('Cancel signal sent - waiting for current chunk to finish...');
-  else toast('No job running',false);
+  if(!res.ok){toast('No job running',false);document.getElementById('cancel-modal').style.display='none';document.getElementById('cancel-btn').disabled=false;}
+}
+async function forceKill(){
+  document.getElementById('cancel-modal').style.display='none';
+  const res=await fetch('/api/job/force-kill',{method:'POST'});
+  if(res.ok){toast('Service restarting...');setTimeout(()=>location.reload(),3000);}
+  else toast('Force kill failed',false);
 }
 function setJobRunning(running){
   jobRunning=running;
@@ -245,8 +274,10 @@ async function pollStatus(){
   if(status.running){pollTimer=setTimeout(pollStatus,2000);}
   else{
     translatePhase=false;
+    document.getElementById('cancel-modal').style.display='none';
+    document.getElementById('cancel-btn').disabled=false;
     if(status.error)toast('Job failed: '+status.error,false);
-    else if(status.cancelled)toast('Job cancelled successfully',false);
+    else if(status.cancelled)toast('Job cancelled successfully');
     else if(status.done)toast('Done - '+(status.completed_files||[]).length+' files written');
     checkAnalyzeStatus();
   }
