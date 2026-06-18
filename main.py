@@ -4,12 +4,14 @@
 All logic lives in the sibling modules; this file just wires HTTP endpoints to
 them. Run with:  uvicorn main:app --host 0.0.0.0 --port 8091
 """
+import json
 import sqlite3
+import asyncio
 from pathlib import Path
 from typing import List
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import config
@@ -31,9 +33,7 @@ class AddKeyRequest(BaseModel):
 
 
 class SettingsRequest(BaseModel):
-    CHUNK_SIZE: int
-    CHARS_PER_TOKEN: int
-    CHUNK_OUTPUT_TOKENS: int
+    NUM_CHUNKS: int
     GEMINI_MAX_OUTPUT_TOKENS: int
     OOS_THRESHOLD: int
     RETRY_ATTEMPTS: int
@@ -115,6 +115,28 @@ async def api_update_settings(req: SettingsRequest):
 @app.get("/api/job-status")
 async def api_job_status():
     return JSONResponse(logger.get_job_status())
+
+
+@app.get("/api/job-stream")
+async def api_job_stream():
+    """Server-Sent Events stream — pushes log lines and status in real time."""
+    async def event_generator():
+        last_idx = 0
+        while True:
+            status = logger.get_job_status()
+            log_lines = status.get("log", [])
+            # Send any new lines since last check
+            if len(log_lines) > last_idx:
+                for line in log_lines[last_idx:]:
+                    yield f"data: {json.dumps({'type': 'log', 'line': line})}\n\n"
+                last_idx = len(log_lines)
+            # Send status update
+            yield f"data: {json.dumps({'type': 'status', 'running': status['running'], 'done': status.get('done', False), 'cancelled': status.get('cancelled', False), 'error': status.get('error'), 'completed_files': status.get('completed_files', []), 'skipped_files': status.get('skipped_files', [])})}\n\n"
+            if not status["running"] and status.get("done"):
+                yield f"data: {json.dumps({'type': 'end'})}\n\n"
+                break
+            await asyncio.sleep(1)
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/job/cancel")

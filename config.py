@@ -22,14 +22,12 @@ HISTORY_DIR   = "/opt/bulk-translate/history"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 DEFAULT_SETTINGS = {
-    "CHUNK_SIZE":               300,    # max blocks per chunk (0 = no block-count limit)
-    "CHARS_PER_TOKEN":          3,      # rough chars->tokens divisor for estimates
+    "NUM_CHUNKS":               1,      # split deduped blob into N chunks (1 = single shot)
+    "GEMINI_MAX_OUTPUT_TOKENS": 0,      # sent as maxOutputTokens (0 = omit, use model default)
     "OOS_THRESHOLD":            2,      # retry-exhaustions/day before a model is marked OOS
     "RETRY_ATTEMPTS":           5,
     "RETRY_COOLDOWN":           10,     # seconds between retries
-    "MAX_BLOB_LINES":           10000,  # sanity cap on total cues per job
-    "CHUNK_OUTPUT_TOKENS":      6000,   # our splitter threshold (0 = split only by CHUNK_SIZE)
-    "GEMINI_MAX_OUTPUT_TOKENS": 0,      # sent as maxOutputTokens (0 = omit, use model default)
+    "MAX_BLOB_LINES":           50000,  # sanity cap on total cues per job
     "FILE_CONFLICT":            "overwrite",  # "overwrite" or "rename" (appends _1, _2, etc.)
     "MODEL_POOL": [
         {"id": "gemini-3.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 1},

@@ -65,27 +65,23 @@ def build_blob(files: list):
 
 
 def estimate_output_tokens(chunk: dict) -> int:
-    """Rough Arabic output-token estimate (chars / CHARS_PER_TOKEN * 1.5)."""
+    """Rough Arabic output-token estimate (chars * 1.5 / 3)."""
     total_chars = sum(len(v) for v in chunk.values())
-    return int(total_chars / cfg["CHARS_PER_TOKEN"] * 1.5)
+    return int(total_chars / 3 * 1.5)
 
 
 def split_blob(payload: dict) -> list:
-    """Split the unique payload into chunks bounded by CHUNK_OUTPUT_TOKENS
-    (0 = disabled) and CHUNK_SIZE block count (0 = disabled)."""
-    token_limit = cfg.get("CHUNK_OUTPUT_TOKENS", 0)
-    size_limit  = cfg.get("CHUNK_SIZE", 0)
-
-    chunks, current = [], {}
-    for key, val in payload.items():
-        current[key] = val
-        over_tokens = token_limit > 0 and estimate_output_tokens(current) >= token_limit
-        over_size   = size_limit  > 0 and len(current) >= size_limit
-        if over_tokens or over_size:
-            chunks.append(current)
-            current = {}
-    if current:
-        chunks.append(current)
+    """Split the unique payload into NUM_CHUNKS even parts."""
+    num_chunks = max(1, cfg.get("NUM_CHUNKS", 1))
+    items = list(payload.items())
+    total = len(items)
+    if num_chunks >= total:
+        # More chunks than lines — one line per chunk
+        return [{k: v} for k, v in items]
+    chunk_size = (total + num_chunks - 1) // num_chunks  # ceiling division
+    chunks = []
+    for i in range(0, total, chunk_size):
+        chunks.append(dict(items[i:i + chunk_size]))
     return chunks
 
 

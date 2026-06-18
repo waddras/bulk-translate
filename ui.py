@@ -138,9 +138,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   <div id="tab-settings" class="panel">
     <div class="sec-label" style="margin-bottom:12px">Translation Parameters</div>
     <div class="settings-grid">
-      <div class="field"><label>CHUNK_SIZE (0=off)</label><input id="s-chunk" type="number"></div>
-      <div class="field"><label>CHARS_PER_TOKEN</label><input id="s-cpt" type="number"></div>
-      <div class="field"><label>CHUNK_OUTPUT_TOKENS (0=off)</label><input id="s-chunktok" type="number"></div>
+      <div class="field"><label>NUM_CHUNKS (split blob into N)</label><input id="s-numchunks" type="number" min="1"></div>
       <div class="field"><label>GEMINI_MAX_OUTPUT (0=default)</label><input id="s-gmaxout" type="number"></div>
       <div class="field"><label>OOS_THRESHOLD</label><input id="s-oos" type="number"></div>
       <div class="field"><label>RETRY_ATTEMPTS</label><input id="s-retry" type="number"></div>
@@ -239,14 +237,14 @@ async function checkAnalyzeStatus(){const res=await fetch('/api/analyze-status')
 async function runAnalyze(){
   if(!selected.length)return;
   const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
-  if(res.ok){setJobRunning(true);showTab('log');pollStatus();}
+  if(res.ok){setJobRunning(true);showTab('log');startSSE();}
   else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);}
 }
 async function runTranslate(){
   translatePhase=true;
   document.getElementById('translate-btn').disabled=true;
   const res=await fetch('/api/translate',{method:'POST'});
-  if(res.ok){setJobRunning(true);showTab('log');pollStatus();}
+  if(res.ok){setJobRunning(true);showTab('log');startSSE();}
   else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);translatePhase=false;document.getElementById('translate-btn').disabled=false;}
 }
 async function cancelJob(){
@@ -267,6 +265,38 @@ function setJobRunning(running){
   document.getElementById('status-dot').className='dot '+(running?'dot-yellow':'dot-green');
   document.getElementById('analyze-btn').disabled=jobRunning||selected.length===0;
   if(running){document.getElementById('translate-btn').disabled=true;}
+}
+let evtSource=null;
+function startSSE(){
+  if(evtSource)evtSource.close();
+  const box=document.getElementById('log-box');box.innerHTML='';
+  evtSource=new EventSource('/api/job-stream');
+  evtSource.onmessage=function(e){
+    const msg=JSON.parse(e.data);
+    if(msg.type==='log'){
+      let cls='log-info';const line=msg.line;
+      if(line.includes('===')||line.startsWith('PHASE')||line.startsWith('ANALYZE')||line.startsWith('TRANSLATE'))cls='log-sep';
+      else if(line.includes('FAIL')||line.includes('ERROR')||line.includes('OOS')||line.startsWith('  skipped'))cls='log-err';
+      else if(line.includes('SUCCESS')||line.includes('COMPLETE')||line.includes('Written')||line.startsWith('  done')||line.includes('Ready to translate'))cls='log-ok';
+      else if(line.includes('WARN')||line.includes('cancel')||line.includes('Retry')||line.startsWith('DEDUP'))cls='log-warn';
+      box.innerHTML+=`<span class="log-line ${cls}">${escHtml(line)}</span>`;
+      box.scrollTop=box.scrollHeight;
+    } else if(msg.type==='status'){
+      setJobRunning(msg.running);
+      if(!msg.running&&msg.done){
+        evtSource.close();evtSource=null;translatePhase=false;
+        document.getElementById('cancel-modal').style.display='none';
+        document.getElementById('cancel-btn').disabled=false;
+        if(msg.error)toast('Job failed: '+msg.error,false);
+        else if(msg.cancelled)toast('Job cancelled successfully');
+        else toast('Done - '+(msg.completed_files||[]).length+' files written');
+        checkAnalyzeStatus();
+      }
+    } else if(msg.type==='end'){
+      if(evtSource){evtSource.close();evtSource=null;}
+    }
+  };
+  evtSource.onerror=function(){if(evtSource){evtSource.close();evtSource=null;}setJobRunning(false);checkAnalyzeStatus();};
 }
 async function pollStatus(){
   const status=await fetch('/api/job-status').then(r=>r.json());
@@ -314,8 +344,7 @@ async function toggleKey(id){await fetch('/api/keys/'+id+'/toggle',{method:'POST
 async function deleteKey(id){if(!confirm('Delete key?'))return;await fetch('/api/keys/'+id,{method:'DELETE'});loadKeys();toast('Deleted');}
 async function loadSettings(){
   const s=await fetch('/api/settings').then(r=>r.json());
-  document.getElementById('s-chunk').value=s.CHUNK_SIZE;document.getElementById('s-cpt').value=s.CHARS_PER_TOKEN;
-  document.getElementById('s-chunktok').value=s.CHUNK_OUTPUT_TOKENS;document.getElementById('s-gmaxout').value=s.GEMINI_MAX_OUTPUT_TOKENS;
+  document.getElementById('s-numchunks').value=s.NUM_CHUNKS;document.getElementById('s-gmaxout').value=s.GEMINI_MAX_OUTPUT_TOKENS;
   document.getElementById('s-oos').value=s.OOS_THRESHOLD;document.getElementById('s-retry').value=s.RETRY_ATTEMPTS;
   document.getElementById('s-cool').value=s.RETRY_COOLDOWN;document.getElementById('s-maxblob').value=s.MAX_BLOB_LINES;
   document.getElementById('s-conflict').value=s.FILE_CONFLICT||'overwrite';
@@ -331,7 +360,7 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={CHUNK_SIZE:parseInt(document.getElementById('s-chunk').value),CHARS_PER_TOKEN:parseInt(document.getElementById('s-cpt').value),CHUNK_OUTPUT_TOKENS:parseInt(document.getElementById('s-chunktok').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),FILE_CONFLICT:document.getElementById('s-conflict').value,MODEL_POOL:getModelPool()};
+  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),FILE_CONFLICT:document.getElementById('s-conflict').value,MODEL_POOL:getModelPool()};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(res.ok)toast('Settings saved');else{const e=await res.json();toast(e.detail||'Save failed',false);}
 }
@@ -361,5 +390,5 @@ async function viewHistory(id){
 document.addEventListener('click',e=>{if(e.target.textContent==='Back to list'){document.getElementById('history-list').style.display='block';}});
 
 navigate(currentPath);
-fetch('/api/job-status').then(r=>r.json()).then(s=>{setJobRunning(s.running);if(s.running)pollStatus();else checkAnalyzeStatus();});
+fetch('/api/job-status').then(r=>r.json()).then(s=>{setJobRunning(s.running);if(s.running)startSSE();else checkAnalyzeStatus();});
 </script></body></html>"""

@@ -31,7 +31,7 @@ _analyze_state = {
 
 def _settings_hash():
     """Simple hash of settings that affect chunking so we can detect changes."""
-    return f"{cfg['CHUNK_SIZE']}|{cfg['CHUNK_OUTPUT_TOKENS']}|{cfg['MAX_BLOB_LINES']}"
+    return f"{cfg['NUM_CHUNKS']}|{cfg['MAX_BLOB_LINES']}"
 
 
 def is_analyze_ready() -> bool:
@@ -73,8 +73,7 @@ async def run_analyze(file_paths: list) -> None:
         for i, f in enumerate(files, 1):
             jlog(f"  [{i:02d}] {f.name}  ({f.stat().st_size / 1024:.1f} KB)")
 
-        jlog(f"Settings: CHUNK_SIZE={cfg['CHUNK_SIZE']}, "
-             f"CHUNK_OUTPUT_TOKENS={cfg['CHUNK_OUTPUT_TOKENS'] or 'off'}, "
+        jlog(f"Settings: NUM_CHUNKS={cfg['NUM_CHUNKS']}, "
              f"MAX_BLOB_LINES={cfg['MAX_BLOB_LINES']}")
 
         # Phase 1
