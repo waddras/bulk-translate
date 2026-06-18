@@ -39,6 +39,7 @@ class SettingsRequest(BaseModel):
     RETRY_ATTEMPTS: int
     RETRY_COOLDOWN: int
     MAX_BLOB_LINES: int
+    FILE_CONFLICT: str
     MODEL_POOL: list
 
 
@@ -158,16 +159,62 @@ async def api_browse(path: str = "/"):
     if not p.exists() or not p.is_dir():
         raise HTTPException(404, f"Not a directory: {path}")
     dirs, srts = [], []
+    sub_exts = {".srt", ".ass"}
     for item in sorted(p.iterdir()):
         if item.is_dir() and not item.name.startswith("."):
             dirs.append({"name": item.name, "path": str(item)})
-        elif item.is_file() and item.suffix == ".srt" and not item.name.endswith(".ar.srt"):
+        elif item.is_file() and item.suffix.lower() in sub_exts:
             srts.append({
                 "name": item.name,
                 "path": str(item),
                 "size_kb": round(item.stat().st_size / 1024, 1),
             })
     return JSONResponse({"current": str(p), "parent": str(p.parent), "dirs": dirs, "files": srts})
+
+
+class RenameRequest(BaseModel):
+    path: str
+    new_name: str
+
+
+@app.post("/api/file/rename")
+async def api_file_rename(req: RenameRequest):
+    p = Path(req.path)
+    if not p.exists():
+        raise HTTPException(404, "File not found")
+    new_path = p.with_name(req.new_name)
+    if new_path.exists():
+        raise HTTPException(400, f"File {req.new_name} already exists")
+    p.rename(new_path)
+    return {"ok": True, "new_path": str(new_path)}
+
+
+class DeleteRequest(BaseModel):
+    paths: List[str]
+
+
+@app.post("/api/file/delete")
+async def api_file_delete(req: DeleteRequest):
+    deleted = []
+    for fp in req.paths:
+        p = Path(fp)
+        if p.exists() and p.is_file():
+            p.unlink()
+            deleted.append(fp)
+    return {"ok": True, "deleted": len(deleted)}
+
+
+@app.get("/api/history")
+async def api_history():
+    return JSONResponse(logger.list_job_history())
+
+
+@app.get("/api/history/{job_id}")
+async def api_history_detail(job_id: str):
+    data = logger.get_job_history(job_id)
+    if data is None:
+        raise HTTPException(404, "Job not found")
+    return JSONResponse(data)
 
 
 @app.get("/", response_class=HTMLResponse)

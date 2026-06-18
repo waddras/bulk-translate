@@ -18,6 +18,7 @@ GEMINI_API_KEY_ENV = os.environ.get("GEMINI_API_KEY", "")
 DB_PATH       = "/opt/bazarr-translator/usage.db"
 BULK_DIR      = "/opt/bulk-translate"
 SETTINGS_PATH = "/opt/bulk-translate/settings.json"
+HISTORY_DIR   = "/opt/bulk-translate/history"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 DEFAULT_SETTINGS = {
@@ -29,6 +30,7 @@ DEFAULT_SETTINGS = {
     "MAX_BLOB_LINES":           10000,  # sanity cap on total cues per job
     "CHUNK_OUTPUT_TOKENS":      6000,   # our splitter threshold (0 = split only by CHUNK_SIZE)
     "GEMINI_MAX_OUTPUT_TOKENS": 0,      # sent as maxOutputTokens (0 = omit, use model default)
+    "FILE_CONFLICT":            "overwrite",  # "overwrite" or "rename" (appends _1, _2, etc.)
     "MODEL_POOL": [
         {"id": "gemini-3.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 1},
         {"id": "gemini-2.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 2},

@@ -7,7 +7,31 @@ were dropped upstream (single-char noise) simply don't appear.
 """
 import pysubs2
 
+from config import cfg
 from logger import log
+
+
+def _resolve_output_path(base_path) -> Path:
+    """Handle file conflict based on cfg['FILE_CONFLICT'] setting."""
+    from pathlib import Path
+    out_path = Path(str(base_path).rsplit(".", 1)[0] + ".ar.srt") if not str(base_path).endswith(".ar.srt") else base_path
+    # Build proper output path
+    fpath = Path(str(base_path))
+    # Strip language suffix and extension, add .ar.srt
+    stem = fpath.stem
+    # Remove .en or .eng suffix if present
+    for suffix in (".en", ".eng"):
+        if stem.endswith(suffix):
+            stem = stem[:-len(suffix)]
+            break
+    out_path = fpath.with_name(stem + ".ar.srt")
+
+    if cfg.get("FILE_CONFLICT", "overwrite") == "rename":
+        counter = 1
+        while out_path.exists():
+            out_path = fpath.with_name(f"{stem}.ar_{counter}.srt")
+            counter += 1
+    return out_path
 
 
 def reassemble_files(translated_blob: dict, meta: dict, files: list):
@@ -44,7 +68,7 @@ def reassemble_files(translated_blob: dict, meta: dict, files: list):
             continue
 
         blocks.sort(key=lambda b: b["block_idx"])
-        out_path = fpath.with_suffix(".ar.srt")
+        out_path = _resolve_output_path(fpath)
         RLM = "\u200F"
         srt_lines = []
         for i, block in enumerate(blocks, start=1):
