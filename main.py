@@ -103,6 +103,10 @@ async def api_get_settings():
 
 @app.post("/api/settings")
 async def api_update_settings(req: SettingsRequest):
+    # Validate no duplicate priorities
+    priorities = [m.get("priority") for m in req.MODEL_POOL if isinstance(m, dict)]
+    if len(priorities) != len(set(priorities)):
+        raise HTTPException(400, "Duplicate priority numbers. Each model must have a unique priority.")
     config.update_settings(req.dict())
     return {"ok": True}
 
