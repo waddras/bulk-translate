@@ -125,16 +125,31 @@ async def api_cancel_job():
     return {"ok": True, "message": "Cancel signal sent"}
 
 
-@app.post("/api/translate-bulk")
-async def api_translate_bulk(payload: TranslationRequest, background_tasks: BackgroundTasks):
+@app.post("/api/analyze")
+async def api_analyze(payload: TranslationRequest, background_tasks: BackgroundTasks):
     if logger.is_running():
         raise HTTPException(409, "A job is already running")
     if not payload.files:
         raise HTTPException(400, "No files provided")
+    background_tasks.add_task(job.run_analyze, payload.files)
+    return {"ok": True, "queued": len(payload.files)}
+
+
+@app.post("/api/translate")
+async def api_translate(background_tasks: BackgroundTasks):
+    if logger.is_running():
+        raise HTTPException(409, "A job is already running")
+    if not job.is_analyze_ready():
+        raise HTTPException(400, "No valid analyze results. Run Analyze first.")
     if db.get_available_model() is None:
         raise HTTPException(429, "All models exhausted or OOS for today")
-    background_tasks.add_task(job.run_bulk_job, payload.files)
-    return {"ok": True, "queued": len(payload.files)}
+    background_tasks.add_task(job.run_translate)
+    return {"ok": True}
+
+
+@app.get("/api/analyze-status")
+async def api_analyze_status():
+    return JSONResponse(job.get_analyze_summary())
 
 
 @app.get("/api/browse")

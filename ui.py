@@ -100,6 +100,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .exec-btn{width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;letter-spacing:.03em}
 .exec-btn:disabled{opacity:.35;cursor:not-allowed}
 .exec-btn:hover:not(:disabled){background:#4f52d6}
+.analyze-btn{width:100%;padding:12px;background:#1a3a1a;color:var(--green);border:1px solid var(--green);border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;letter-spacing:.03em}
+.analyze-btn:disabled{opacity:.35;cursor:not-allowed}
+.analyze-btn:hover:not(:disabled){background:#1f4a1f}
 .cancel-btn{width:100%;padding:9px;background:none;border:1px solid var(--red);color:var(--red);border-radius:8px;cursor:pointer;font-size:13px;display:none;font-weight:500}
 .cancel-btn:hover{background:#3a1010}
 .dot{width:9px;height:9px;border-radius:50%}
@@ -169,7 +172,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 <div class="sidebar">
   <div class="sb-header"><h2>Queue</h2><div class="q-count"><span id="q-count">0</span> files selected</div></div>
   <div class="queue-list" id="queue-list"><div class="empty">No files queued</div></div>
-  <div class="sb-footer"><button class="exec-btn" id="exec-btn" onclick="executeBatch()" disabled>Execute Batch</button><button class="cancel-btn" id="cancel-btn" onclick="cancelJob()">Cancel Job</button></div>
+  <div class="sb-footer"><button class="analyze-btn" id="analyze-btn" onclick="runAnalyze()" disabled>Analyze</button><button class="exec-btn" id="translate-btn" onclick="runTranslate()" disabled>Translate</button><button class="cancel-btn" id="cancel-btn" onclick="cancelJob()">Cancel</button></div>
 </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -205,21 +208,37 @@ function selectAll(){document.querySelectorAll('#file-list input[type=checkbox]'
 
 function updateQueue(){
   const el=document.getElementById('queue-list');document.getElementById('q-count').textContent=selected.length;
-  document.getElementById('exec-btn').disabled=selected.length===0||jobRunning;
+  document.getElementById('analyze-btn').disabled=selected.length===0||jobRunning;
+  document.getElementById('translate-btn').disabled=true;
   if(!selected.length){el.innerHTML='<div class="empty">No files queued</div>';return;}
   el.innerHTML=selected.map(p=>{const name=p.split('/').pop();return`<div class="q-item"><span class="q-name" title="${escHtml(p)}">${escHtml(name)}</span><button class="rm" onclick="removeFile(this)" data-path="${escHtml(p)}">x</button></div>`;}).join('');
+  checkAnalyzeStatus();
 }
 function removeFile(btn){const path=btn.dataset.path;selected=selected.filter(p=>p!==path);updateQueue();navigate();}
 
-async function executeBatch(){
+async function checkAnalyzeStatus(){
+  const res=await fetch('/api/analyze-status').then(r=>r.json());
+  document.getElementById('translate-btn').disabled=!res.ready||jobRunning;
+}
+
+async function runAnalyze(){
   if(!selected.length)return;
-  const res=await fetch('/api/translate-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
-  if(res.ok){selected=[];updateQueue();setJobRunning(true);showTab('log');pollStatus();}
+  const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
+  if(res.ok){setJobRunning(true);showTab('log');pollStatus();}
   else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);}
 }
+
+async function runTranslate(){
+  const res=await fetch('/api/translate',{method:'POST'});
+  if(res.ok){setJobRunning(true);showTab('log');pollStatus();}
+  else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);}
+}
+
+async function executeBatch(){runAnalyze();}
+
 async function cancelJob(){const res=await fetch('/api/job/cancel',{method:'POST'});if(res.ok)toast('Cancel signal sent');else toast('No job running',false);}
-function setJobRunning(running){jobRunning=running;document.getElementById('cancel-btn').style.display=running?'block':'none';document.getElementById('status-dot').className='dot '+(running?'dot-yellow':'dot-green');document.getElementById('exec-btn').disabled=jobRunning||selected.length===0;}
-async function pollStatus(){const status=await fetch('/api/job-status').then(r=>r.json());setJobRunning(status.running);await loadLog();if(status.running)pollTimer=setTimeout(pollStatus,2000);else{if(status.error)toast('Job failed: '+status.error,false);else if(status.cancelled)toast('Cancelled - '+(status.completed_files||[]).length+' files written');else if(status.done)toast('Complete - '+(status.completed_files||[]).length+' files written');}}
+function setJobRunning(running){jobRunning=running;document.getElementById('cancel-btn').style.display=running?'block':'none';document.getElementById('status-dot').className='dot '+(running?'dot-yellow':'dot-green');document.getElementById('analyze-btn').disabled=jobRunning||selected.length===0;if(!running)checkAnalyzeStatus();}
+async function pollStatus(){const status=await fetch('/api/job-status').then(r=>r.json());setJobRunning(status.running);await loadLog();if(status.running)pollTimer=setTimeout(pollStatus,2000);else{if(status.error)toast('Job failed: '+status.error,false);else if(status.cancelled)toast('Cancelled - '+(status.completed_files||[]).length+' files written');else if(status.done)toast('Done');checkAnalyzeStatus();}}
 
 async function loadLog(){
   const status=await fetch('/api/job-status').then(r=>r.json());
