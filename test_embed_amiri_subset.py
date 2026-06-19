@@ -112,10 +112,10 @@ for st in subs.styles.values():
     st.shadow = SHADOW
     st.bold = BOLD
     st.italic = ITALIC
-    st.primarycolor = pysubs2.Color.from_ass(PRIMARY_COLOR)
-    st.secondarycolor = pysubs2.Color.from_ass(SECONDARY_COLOR)
-    st.outlinecolor = pysubs2.Color.from_ass(OUTLINE_COLOR)
-    st.backcolor = pysubs2.Color.from_ass(BACK_COLOR)
+    st.primarycolor = pysubs2.Color(*[int(PRIMARY_COLOR[i:i+2], 16) for i in (8,6,4,2)])
+    st.secondarycolor = pysubs2.Color(*[int(SECONDARY_COLOR[i:i+2], 16) for i in (8,6,4,2)])
+    st.outlinecolor = pysubs2.Color(*[int(OUTLINE_COLOR[i:i+2], 16) for i in (8,6,4,2)])
+    st.backcolor = pysubs2.Color(*[int(BACK_COLOR[i:i+2], 16) for i in (8,6,4,2)])
     st.marginl = MARGIN_LEFT
     st.marginr = MARGIN_RIGHT
     st.marginv = MARGIN_VERTICAL
