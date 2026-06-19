@@ -115,6 +115,12 @@ for st in subs.styles.values():
     st.marginr = MARGIN_RIGHT
     st.marginv = MARGIN_VERTICAL
 
+# Add RLM to every dialogue line
+RLM = "\u200F"
+for event in subs:
+    if event.text and not event.text.startswith(RLM):
+        event.text = RLM + event.text
+
 ass_content = subs.to_string("ass")
 
 # Embed the subsetted font
