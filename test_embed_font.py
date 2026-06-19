@@ -4,9 +4,9 @@ from pathlib import Path
 import pysubs2
 import glob
 
-cands = glob.glob("/usr/share/fonts/**/NotoSansArabic-Regular.ttf", recursive=True)
+cands = glob.glob("/usr/share/fonts/**/Amiri-Regular.ttf", recursive=True)
 if not cands:
-    raise SystemExit("Font not found. Run: find /usr/share/fonts -name '*NotoSans*Arabic*'")
+    raise SystemExit("Font not found. Run: find /usr/share/fonts -name '*Amiri*'")
 ttf = cands[0]
 print("Using font:", ttf)
 
@@ -33,20 +33,20 @@ def ass_encode(data):
 INPUT = "/mnt/secure/srv/hddmedia/anime/Haikyuu!!/Season 1/Haikyu!! - S01E01.ar.srt"
 subs = pysubs2.SSAFile.load(INPUT)
 for st in subs.styles.values():
-    st.fontname = "Noto Sans Arabic"
+    st.fontname = "Amiri"
     st.encoding = 1
     st.alignment = 2
 ass_content = subs.to_string("ass")
 
 font_bytes = Path(ttf).read_bytes()
 encoded_lines = ass_encode(font_bytes)
-fonts_section = "\n[Fonts]\nfontname: NotoSansArabic_0.ttf\n"
+fonts_section = "\n[Fonts]\nfontname: Amiri-Regular_0.ttf\n"
 fonts_section += "\n".join(encoded_lines)
 fonts_section += "\n"
 
 ass_content = ass_content.rstrip() + "\n" + fonts_section
 
-out = Path(INPUT).parent / (Path(INPUT).stem + "_embedded.ass")
+out = Path(INPUT).parent / (Path(INPUT).stem + "_embedded_amiri.ass")
 out.write_text(ass_content, encoding="utf-8")
 print("Done:", out)
 print("Size:", round(out.stat().st_size / 1024), "KB")
