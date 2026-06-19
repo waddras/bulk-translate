@@ -40,10 +40,9 @@ BOLD = False                 # Bold text
 ITALIC = False               # Italic text
 
 # Colors in ASS format: &HAABBGGRR (hex, alpha-blue-green-red)
-PRIMARY_COLOR = "&H00FFFFFF"   # Main text color (white)
-SECONDARY_COLOR = "&H0000FFFF" # Secondary color (yellow, used for karaoke)
-OUTLINE_COLOR = "&H00000000"   # Outline color (black)
-BACK_COLOR = "&H00000000"      # Shadow/background color (black)
+# Leave commented out to use pysubs2 defaults (white text, black outline)
+# To customize, edit the style object directly after loading.
+# Example: st.primarycolor = pysubs2.Color(255, 255, 255, 0)  # RGBA white
 
 # Margins (distance from screen edge in pixels)
 MARGIN_LEFT = 20
@@ -112,10 +111,6 @@ for st in subs.styles.values():
     st.shadow = SHADOW
     st.bold = BOLD
     st.italic = ITALIC
-    st.primarycolor = pysubs2.Color(*[int(PRIMARY_COLOR[i:i+2], 16) for i in (8,6,4,2)])
-    st.secondarycolor = pysubs2.Color(*[int(SECONDARY_COLOR[i:i+2], 16) for i in (8,6,4,2)])
-    st.outlinecolor = pysubs2.Color(*[int(OUTLINE_COLOR[i:i+2], 16) for i in (8,6,4,2)])
-    st.backcolor = pysubs2.Color(*[int(BACK_COLOR[i:i+2], 16) for i in (8,6,4,2)])
     st.marginl = MARGIN_LEFT
     st.marginr = MARGIN_RIGHT
     st.marginv = MARGIN_VERTICAL
