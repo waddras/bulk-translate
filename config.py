@@ -28,7 +28,18 @@ DEFAULT_SETTINGS = {
     "RETRY_ATTEMPTS":           5,
     "RETRY_COOLDOWN":           10,     # seconds between retries
     "MAX_BLOB_LINES":           50000,  # sanity cap on total cues per job
-    "FILE_CONFLICT":            "overwrite",  # "overwrite" or "rename" (appends _1, _2, etc.)
+    "FILE_CONFLICT":            "overwrite",  # "overwrite" or "rename"
+    "OUTPUT_FORMAT":            "ass",  # "srt" or "ass"
+    "EMBED_FONT":               True,   # embed subsetted font in ASS output
+    "PRESERVE_ASS_POSITIONS":   False,  # keep \pos, \an, \move, \fad, \fade from input ASS
+    "FONT_NAME":                "Amiri",
+    "FONT_SIZE":                40,
+    "FONT_OUTLINE":             1,
+    "FONT_SHADOW":              0,
+    "FONT_ALIGNMENT":           2,
+    "FONT_MARGIN_L":            20,
+    "FONT_MARGIN_R":            20,
+    "FONT_MARGIN_V":            30,
     "MODEL_POOL": [
         {"id": "gemini-3.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 1},
         {"id": "gemini-2.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 2},

@@ -54,6 +54,7 @@ def build_blob(files: list):
                 "end":       cue["end"],
                 "text":      text,
                 "rep":       rep,
+                "pos_tags":  cue.get("pos_tags", ""),
             }
         jlog(f"  [{file_id}] {fpath.name} -> {len(cues)} cues")
 

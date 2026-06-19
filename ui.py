@@ -145,6 +145,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
       <div class="field"><label>RETRY_COOLDOWN (sec)</label><input id="s-cool" type="number"></div>
       <div class="field"><label>MAX_BLOB_LINES</label><input id="s-maxblob" type="number"></div>
       <div class="field"><label>File Conflict</label><select id="s-conflict"><option value="overwrite">Overwrite</option><option value="rename">Rename (_1, _2...)</option></select></div>
+      <div class="field"><label>Output Format</label><select id="s-format"><option value="ass">ASS (recommended)</option><option value="srt">SRT</option></select></div>
+      <div class="field"><label>Embed Font (ASS only)</label><select id="s-embed"><option value="true">Yes</option><option value="false">No</option></select></div>
+      <div class="field"><label>Preserve ASS Positions</label><select id="s-preserve"><option value="false">No</option><option value="true">Yes</option></select></div>
+      <div class="field"><label>Font Name</label><input id="s-fontname" type="text"></div>
+      <div class="field"><label>Font Size</label><input id="s-fontsize" type="number" min="1"></div>
+      <div class="field"><label>Font Outline</label><input id="s-outline" type="number" min="0"></div>
+      <div class="field"><label>Font Shadow</label><input id="s-shadow" type="number" min="0"></div>
+      <div class="field"><label>Font Alignment (1-9)</label><input id="s-align" type="number" min="1" max="9"></div>
+      <div class="field"><label>Margin Left</label><input id="s-ml" type="number" min="0"></div>
+      <div class="field"><label>Margin Right</label><input id="s-mr" type="number" min="0"></div>
+      <div class="field"><label>Margin Vertical</label><input id="s-mv" type="number" min="0"></div>
     </div>
     <div class="sec-label" style="margin-bottom:8px">Model Pool</div>
     <div class="model-header"><span style="width:40px">Pri</span><span style="flex:2">Model ID</span><span style="width:55px">RPD</span><span style="width:55px">RPM</span><span style="width:30px"></span></div>
@@ -348,6 +359,17 @@ async function loadSettings(){
   document.getElementById('s-oos').value=s.OOS_THRESHOLD;document.getElementById('s-retry').value=s.RETRY_ATTEMPTS;
   document.getElementById('s-cool').value=s.RETRY_COOLDOWN;document.getElementById('s-maxblob').value=s.MAX_BLOB_LINES;
   document.getElementById('s-conflict').value=s.FILE_CONFLICT||'overwrite';
+  document.getElementById('s-format').value=s.OUTPUT_FORMAT||'ass';
+  document.getElementById('s-embed').value=String(s.EMBED_FONT!==false);
+  document.getElementById('s-preserve').value=String(s.PRESERVE_ASS_POSITIONS===true);
+  document.getElementById('s-fontname').value=s.FONT_NAME||'Amiri';
+  document.getElementById('s-fontsize').value=s.FONT_SIZE||40;
+  document.getElementById('s-outline').value=s.FONT_OUTLINE!=null?s.FONT_OUTLINE:1;
+  document.getElementById('s-shadow').value=s.FONT_SHADOW!=null?s.FONT_SHADOW:0;
+  document.getElementById('s-align').value=s.FONT_ALIGNMENT||2;
+  document.getElementById('s-ml').value=s.FONT_MARGIN_L||20;
+  document.getElementById('s-mr').value=s.FONT_MARGIN_R||20;
+  document.getElementById('s-mv').value=s.FONT_MARGIN_V||30;
   renderModelPool(s.MODEL_POOL);
 }
 function renderModelPool(pool){
@@ -360,7 +382,7 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),FILE_CONFLICT:document.getElementById('s-conflict').value,MODEL_POOL:getModelPool()};
+  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),FILE_CONFLICT:document.getElementById('s-conflict').value,OUTPUT_FORMAT:document.getElementById('s-format').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(res.ok)toast('Settings saved');else{const e=await res.json();toast(e.detail||'Save failed',false);}
 }

@@ -14,7 +14,7 @@ from logger import jlog
 import db
 import blob
 import ai
-import srt_post
+import sub_post
 
 SEP = "=" * 60
 
@@ -221,7 +221,7 @@ async def run_translate() -> None:
         jlog(SEP)
         jlog("PHASE 4 - Reassembling output files...")
         translated_blob = blob.expand_translations(translated_unique, meta)
-        completed, warnings = srt_post.reassemble_files(translated_blob, meta, files)
+        completed, warnings = sub_post.reassemble_files(translated_blob, meta, files)
         logger.set_completed(completed)
         logger.set_skipped(warnings)
 

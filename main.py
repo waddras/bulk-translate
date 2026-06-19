@@ -40,6 +40,17 @@ class SettingsRequest(BaseModel):
     RETRY_COOLDOWN: int
     MAX_BLOB_LINES: int
     FILE_CONFLICT: str
+    OUTPUT_FORMAT: str
+    EMBED_FONT: bool
+    PRESERVE_ASS_POSITIONS: bool
+    FONT_NAME: str
+    FONT_SIZE: int
+    FONT_OUTLINE: int
+    FONT_SHADOW: int
+    FONT_ALIGNMENT: int
+    FONT_MARGIN_L: int
+    FONT_MARGIN_R: int
+    FONT_MARGIN_V: int
     MODEL_POOL: list
 
 
