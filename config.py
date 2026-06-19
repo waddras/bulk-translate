@@ -31,7 +31,7 @@ DEFAULT_SETTINGS = {
     "FILE_CONFLICT":            "overwrite",  # "overwrite" or "rename"
     "OUTPUT_FORMAT":            "ass",  # "srt" or "ass"
     "EMBED_FONT":               True,   # embed subsetted font in ASS output
-    "PRESERVE_ASS_POSITIONS":   False,  # keep \pos, \an, \move, \fad, \fade from input ASS
+    "PRESERVE_ASS_POSITIONS":   True,   # keep \pos, \an, \move, \fad, \fade from input ASS
     "FONT_NAME":                "Amiri",
     "FONT_SIZE":                40,
     "FONT_OUTLINE":             1,
