@@ -115,11 +115,13 @@ for st in subs.styles.values():
     st.marginr = MARGIN_RIGHT
     st.marginv = MARGIN_VERTICAL
 
-# Add RLM to every dialogue line
-RLM = "\u200F"
+# Add RLE wrap to every dialogue line for correct punctuation direction
+RLE = "\u202B"
+PDF = "\u202C"
 for event in subs:
-    if event.text and not event.text.startswith(RLM):
-        event.text = RLM + event.text
+    if event.text:
+        clean = event.text.lstrip("\u200F")
+        event.text = RLE + clean + PDF
 
 ass_content = subs.to_string("ass")
 
