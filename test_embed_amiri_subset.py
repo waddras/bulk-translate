@@ -57,8 +57,11 @@ INPUT = "/mnt/secure/srv/hddmedia/anime/Haikyuu!!/Season 1/Haikyu!! - S01E01.ar.
 subs = pysubs2.SSAFile.load(INPUT)
 for st in subs.styles.values():
     st.fontname = "Amiri"
+    st.fontsize = 40
     st.encoding = 1
     st.alignment = 2
+    st.shadow = 0
+    st.outline = 0
 ass_content = subs.to_string("ass")
 
 encoded_lines = ass_encode(subset_bytes)
