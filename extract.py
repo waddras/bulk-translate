@@ -9,6 +9,14 @@ from logger import jlog, log, is_cancelled
 
 SEP = "=" * 60
 
+# Module-level state for probe results
+_probe_state = {"probed": False, "styles": []}
+
+
+def get_probe_styles() -> list:
+    """Return detected styles from last probe."""
+    return _probe_state["styles"]
+
 
 def probe_file(filepath: str) -> list:
     """Probe an MKV file and return its subtitle tracks.
@@ -37,6 +45,46 @@ def probe_file(filepath: str) -> list:
             "title": stream.get("tags", {}).get("title", ""),
         })
     return tracks
+
+
+def extract_styles_from_track(filepath: str, track_index: int) -> list:
+    """Extract ASS styles from a specific subtitle track in an MKV.
+
+    Temporarily extracts the track to read style names, then deletes the temp file.
+    Returns list of style name strings.
+    """
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(suffix=".ass", delete=False)
+    tmp.close()
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-v", "quiet",
+            "-i", str(filepath),
+            "-map", f"0:s:{track_index}",
+            "-c:s", "copy",
+            tmp.name,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            return []
+        content = Path(tmp.name).read_text(encoding="utf-8", errors="replace")
+        styles = []
+        in_styles = False
+        for line in content.splitlines():
+            if line.strip().lower().startswith("[v4"):
+                in_styles = True
+                continue
+            if in_styles and line.startswith("["):
+                break
+            if in_styles and line.startswith("Style:"):
+                name = line.split(":", 1)[1].split(",")[0].strip()
+                if name and name not in styles:
+                    styles.append(name)
+        return styles
+    except Exception:
+        return []
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
 
 
 def extract_subtitle(filepath: str, track_index: int, suffix: str) -> str:
@@ -69,9 +117,9 @@ def extract_subtitle(filepath: str, track_index: int, suffix: str) -> str:
 
 
 async def run_probe(file_paths: list) -> dict:
-    """Probe all selected MKVs and return track info.
+    """Probe all selected MKVs and return track info + styles.
 
-    Returns {filepath: [tracks]} dict.
+    Returns {filepath: [tracks]} dict. Also stores detected styles in module state.
     """
     import logger
     logger.reset_job_status()
@@ -82,6 +130,9 @@ async def run_probe(file_paths: list) -> dict:
         jlog(f"PROBE - {len(file_paths)} MKV files")
 
         results = {}
+        all_styles = set()
+        first_ass_track = None
+
         for i, fp in enumerate(file_paths, 1):
             if is_cancelled():
                 jlog("CANCELLED")
@@ -99,12 +150,27 @@ async def run_probe(file_paths: list) -> dict:
                 for t in tracks:
                     title = f' "{t["title"]}"' if t["title"] else ""
                     jlog(f"        Track {t['index']}: [{t['language']}] ({t['codec']}){title}")
+                    # Collect styles from ASS tracks
+                    if t["codec"] in ("ass", "ssa") and first_ass_track is None:
+                        first_ass_track = (fp, t["index"])
+                # Extract styles from each file's ASS tracks
+                for t in tracks:
+                    if t["codec"] in ("ass", "ssa"):
+                        styles = extract_styles_from_track(fp, t["index"])
+                        all_styles.update(styles)
             except Exception as e:
                 jlog(f"  [{i:02d}] {fpath.name} - ERROR: {e}")
                 results[fp] = []
 
+        # Store detected styles for the UI
+        _probe_state["styles"] = sorted(all_styles)
+        _probe_state["probed"] = True
+
+        if all_styles:
+            jlog(f"  Detected styles: {', '.join(sorted(all_styles))}")
+
         jlog(SEP)
-        jlog(f"PROBE COMPLETE - {len(results)} files analyzed")
+        jlog(f"PROBE COMPLETE - {len(results)} files analyzed, {len(all_styles)} unique styles found")
         logger.set_done()
         return results
 
@@ -117,16 +183,19 @@ async def run_probe(file_paths: list) -> dict:
         logger.set_running(False)
 
 
-async def run_extract(file_paths: list, track_index: int, suffix: str) -> None:
-    """Extract subtitle track from all selected MKVs."""
+async def run_extract(file_paths: list, track_index: int, suffix: str, keep_styles: list = None) -> None:
+    """Extract subtitle track from all selected MKVs, optionally filtering styles."""
     import logger
     logger.reset_job_status()
     logger.clear_cancel()
 
     try:
+        ext = cfg.get("EXTRACT_FORMAT", "ass")
         jlog(SEP)
         jlog(f"EXTRACT - {len(file_paths)} files, track {track_index}, suffix: '{suffix}'")
-        jlog(f"Output format: {cfg.get('EXTRACT_FORMAT', 'ass')}")
+        jlog(f"Output format: {ext}")
+        if keep_styles and ext == "ass":
+            jlog(f"Keeping styles: {', '.join(keep_styles)}")
 
         completed, failed = [], []
         for i, fp in enumerate(file_paths, 1):
@@ -137,6 +206,9 @@ async def run_extract(file_paths: list, track_index: int, suffix: str) -> None:
             jlog(f"  [{i:02d}/{len(file_paths)}] {fpath.name}")
             try:
                 out = extract_subtitle(fp, track_index, suffix)
+                # Filter styles if ASS and styles specified
+                if keep_styles and ext == "ass":
+                    _filter_ass_styles(out, keep_styles)
                 jlog(f"        -> {Path(out).name}")
                 completed.append(Path(out).name)
             except Exception as e:
@@ -165,3 +237,61 @@ async def run_extract(file_paths: list, track_index: int, suffix: str) -> None:
         logger.set_done()
     finally:
         logger.set_running(False)
+
+
+def _filter_ass_styles(filepath: str, keep_styles: list) -> None:
+    """Remove styles and dialogue lines not in keep_styles from an ASS file."""
+    content = Path(filepath).read_text(encoding="utf-8", errors="replace")
+    lines = content.splitlines()
+    output = []
+    in_styles = False
+    in_events = False
+    format_fields = []
+
+    for line in lines:
+        lower = line.strip().lower()
+        if lower.startswith("[v4"):
+            in_styles = True
+            in_events = False
+            output.append(line)
+            continue
+        if lower == "[events]":
+            in_styles = False
+            in_events = True
+            output.append(line)
+            continue
+        if line.startswith("["):
+            in_styles = False
+            in_events = False
+            output.append(line)
+            continue
+
+        if in_styles:
+            if line.startswith("Format:"):
+                output.append(line)
+            elif line.startswith("Style:"):
+                name = line.split(":", 1)[1].split(",")[0].strip()
+                if name in keep_styles:
+                    output.append(line)
+            else:
+                output.append(line)
+        elif in_events:
+            if line.startswith("Format:"):
+                format_fields = [f.strip().lower() for f in line.split(":", 1)[1].split(",")]
+                output.append(line)
+            elif line.startswith("Dialogue:"):
+                values = line.split(":", 1)[1].split(",", len(format_fields) - 1)
+                if "style" in format_fields:
+                    style_idx = format_fields.index("style")
+                    if style_idx < len(values):
+                        style_name = values[style_idx].strip()
+                        if style_name in keep_styles:
+                            output.append(line)
+                else:
+                    output.append(line)
+            else:
+                output.append(line)
+        else:
+            output.append(line)
+
+    Path(filepath).write_text("\n".join(output), encoding="utf-8")

@@ -32,6 +32,7 @@ class ExtractRequest(BaseModel):
     files: List[str]
     track_index: int
     suffix: str
+    keep_styles: List[str] = []
 
 
 class AddKeyRequest(BaseModel):
@@ -224,8 +225,17 @@ async def api_extract(payload: ExtractRequest, background_tasks: BackgroundTasks
         raise HTTPException(400, "No files provided")
     if not payload.suffix:
         raise HTTPException(400, "Suffix is required")
-    background_tasks.add_task(extract.run_extract, payload.files, payload.track_index, payload.suffix)
+    background_tasks.add_task(
+        extract.run_extract, payload.files, payload.track_index,
+        payload.suffix, payload.keep_styles or None
+    )
     return {"ok": True, "queued": len(payload.files)}
+
+
+@app.get("/api/probe-styles")
+async def api_probe_styles():
+    """Return styles detected during last probe."""
+    return JSONResponse({"styles": extract.get_probe_styles()})
 
 
 @app.get("/api/browse")

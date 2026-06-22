@@ -117,23 +117,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     <div class="tab" onclick="showTab('log')">Log</div>
     <div class="tab" onclick="showTab('history')">History</div>
   </div>
-  <div id="tab-browser" class="panel active">
-    <div style="display:flex;gap:16px;margin-bottom:14px;align-items:center">
-      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="translate" checked onchange="switchMode('translate')"> Translate</label>
-      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="extract" onchange="switchMode('extract')"> Extract Subs</label>
-    </div>
-    <div class="path-bar"><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
-    <div id="dir-list" class="dir-list"></div>
-    <div class="toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" onclick="deleteSelected()">Delete Selected</button></div>
-    <div class="sec-label" id="file-label">Subtitle Files (.srt / .ass)</div>
-    <div id="file-list" class="file-list"></div>
-    <div id="extract-options" style="display:none;margin-top:16px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
-      <div class="sec-label" style="margin-bottom:8px">Extraction Options (set after Probe)</div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <div class="field"><label>Track #</label><input id="ext-track" type="number" min="0" value="0" style="width:70px"></div>
-        <div class="field"><label>Suffix</label><input id="ext-suffix" type="text" value=".en" placeholder=".en.dialogue" style="width:160px"></div>
+  <div id="tab-browser" class="panel active" style="display:flex;flex-direction:column;overflow:hidden;padding:20px">
+    <div style="flex-shrink:0">
+      <div style="display:flex;gap:16px;margin-bottom:14px;align-items:center">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="translate" checked onchange="switchMode('translate')"> Translate</label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="extract" onchange="switchMode('extract')"> Extract Subs</label>
       </div>
+      <div class="path-bar"><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
+      <div id="dir-list" class="dir-list"></div>
+      <div class="toolbar" id="file-toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" id="delete-btn" onclick="deleteSelected()">Delete Selected</button></div>
+      <div class="sec-label" id="file-label">Subtitle Files (.srt / .ass)</div>
     </div>
+    <div id="file-list" class="file-list" style="flex:1;overflow-y:auto"></div>
   </div>
   <div id="tab-quota" class="panel">
     <div class="sec-label" style="margin-bottom:12px">Model Quotas - Period: <span id="quota-date"></span></div>
@@ -187,7 +182,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 </div>
 <div class="sidebar">
   <div class="sb-header"><h2>Queue</h2><div class="q-count"><span id="q-count">0</span> files selected</div></div>
-  <div class="queue-list" id="queue-list"><div class="empty">No files queued</div></div>
+  <div id="queue-panel">
+    <div class="queue-list" id="queue-list"><div class="empty">No files queued</div></div>
+  </div>
+  <div id="extract-panel" style="display:none;flex:1;overflow-y:auto;padding:12px">
+    <div class="sec-label" style="margin-bottom:10px">Extraction Setup</div>
+    <div class="field" style="margin-bottom:10px"><label>Track #</label><input id="ext-track" type="number" min="0" value="0" style="width:100%"></div>
+    <div class="field" style="margin-bottom:10px"><label>Suffix</label><input id="ext-suffix" type="text" value=".en" placeholder=".en.dialogue" style="width:100%"></div>
+    <div class="sec-label" style="margin-bottom:8px">Keep Styles</div>
+    <div id="style-list"><div class="empty" style="font-size:12px">Run Probe first</div></div>
+    <div id="srt-warning" style="display:none;font-size:11px;color:var(--yellow);margin-top:8px;padding:8px;background:#3a3a1a;border-radius:6px">Style filtering only available with ASS output</div>
+  </div>
   <div class="sb-footer">
     <button class="analyze-btn" id="analyze-btn" onclick="runAnalyze()" disabled>Analyze</button>
     <button class="exec-btn" id="translate-btn" onclick="runTranslate()" disabled>Translate</button>
@@ -235,10 +240,13 @@ function selectAll(){document.querySelectorAll('#file-list input[type=checkbox]'
 function unselectAll(){document.querySelectorAll('#file-list input[type=checkbox]').forEach(cb=>{if(cb.checked){cb.checked=false;cb.onchange();}});}
 function switchMode(mode){
   currentMode=mode;selected=[];updateQueue();
-  document.getElementById('extract-options').style.display=mode==='extract'?'block':'none';
   document.getElementById('file-label').textContent=mode==='extract'?'Video Files (.mkv)':'Subtitle Files (.srt / .ass)';
   document.getElementById('analyze-btn').textContent=mode==='extract'?'Probe':'Analyze';
   document.getElementById('translate-btn').textContent=mode==='extract'?'Extract':'Translate';
+  document.getElementById('delete-btn').style.display=mode==='extract'?'none':'inline-block';
+  document.getElementById('queue-panel').style.display=mode==='extract'?'none':'block';
+  document.getElementById('extract-panel').style.display=mode==='extract'?'block':'none';
+  if(mode==='translate'){document.getElementById('style-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';}
   navigate();
 }
 async function deleteSelected(){
@@ -290,8 +298,9 @@ async function runTranslate(){
     const track=parseInt(document.getElementById('ext-track').value)||0;
     const suffix=document.getElementById('ext-suffix').value.trim();
     if(!suffix){toast('Enter a suffix',false);return;}
+    const keepStyles=Array.from(document.querySelectorAll('.style-cb:checked')).map(cb=>cb.value);
     translatePhase=true;document.getElementById('translate-btn').disabled=true;
-    const res=await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected,track_index:track,suffix:suffix})});
+    const res=await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected,track_index:track,suffix:suffix,keep_styles:keepStyles})});
     if(res.ok){setJobRunning(true);showTab('log');startSSE();}
     else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);translatePhase=false;document.getElementById('translate-btn').disabled=false;}
   } else {
@@ -345,12 +354,20 @@ function startSSE(){
         else if(msg.cancelled)toast('Job cancelled successfully');
         else toast('Done - '+(msg.completed_files||[]).length+' files written');
         checkAnalyzeStatus();
+        if(currentMode==='extract')loadProbeStyles();
       }
     } else if(msg.type==='end'){
       if(evtSource){evtSource.close();evtSource=null;}
     }
   };
   evtSource.onerror=function(){if(evtSource){evtSource.close();evtSource=null;}setJobRunning(false);checkAnalyzeStatus();};
+}
+async function loadProbeStyles(){
+  const res=await fetch('/api/probe-styles').then(r=>r.json());
+  const el=document.getElementById('style-list');
+  const styles=res.styles||[];
+  if(!styles.length){el.innerHTML='<div class="empty" style="font-size:12px">No styles detected</div>';return;}
+  el.innerHTML=styles.map(s=>`<label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;cursor:pointer"><input type="checkbox" checked class="style-cb" value="${escHtml(s)}"> ${escHtml(s)}</label>`).join('');
 }
 async function pollStatus(){
   const status=await fetch('/api/job-status').then(r=>r.json());
