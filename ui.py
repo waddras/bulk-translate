@@ -118,11 +118,22 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     <div class="tab" onclick="showTab('history')">History</div>
   </div>
   <div id="tab-browser" class="panel active">
+    <div style="display:flex;gap:16px;margin-bottom:14px;align-items:center">
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="translate" checked onchange="switchMode('translate')"> Translate</label>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="extract" onchange="switchMode('extract')"> Extract Subs</label>
+    </div>
     <div class="path-bar"><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
     <div id="dir-list" class="dir-list"></div>
     <div class="toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" onclick="deleteSelected()">Delete Selected</button></div>
-    <div class="sec-label">Subtitle Files (.srt / .ass)</div>
+    <div class="sec-label" id="file-label">Subtitle Files (.srt / .ass)</div>
     <div id="file-list" class="file-list"></div>
+    <div id="extract-options" style="display:none;margin-top:16px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
+      <div class="sec-label" style="margin-bottom:8px">Extraction Options (set after Probe)</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="field"><label>Track #</label><input id="ext-track" type="number" min="0" value="0" style="width:70px"></div>
+        <div class="field"><label>Suffix</label><input id="ext-suffix" type="text" value=".en" placeholder=".en.dialogue" style="width:160px"></div>
+      </div>
+    </div>
   </div>
   <div id="tab-quota" class="panel">
     <div class="sec-label" style="margin-bottom:12px">Model Quotas - Period: <span id="quota-date"></span></div>
@@ -146,6 +157,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
       <div class="field"><label>MAX_BLOB_LINES</label><input id="s-maxblob" type="number"></div>
       <div class="field"><label>File Conflict</label><select id="s-conflict"><option value="overwrite">Overwrite</option><option value="rename">Rename (_1, _2...)</option></select></div>
       <div class="field"><label>Output Format</label><select id="s-format"><option value="ass">ASS (recommended)</option><option value="srt">SRT</option></select></div>
+      <div class="field"><label>Extract Format (MKV)</label><select id="s-extformat"><option value="ass">ASS</option><option value="srt">SRT</option></select></div>
       <div class="field"><label>Embed Font (ASS only)</label><select id="s-embed"><option value="true">Yes</option><option value="false">No</option></select></div>
       <div class="field"><label>Preserve ASS Positions</label><select id="s-preserve"><option value="false">No</option><option value="true">Yes</option></select></div>
       <div class="field"><label>Font Name</label><input id="s-fontname" type="text"></div>
@@ -195,7 +207,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
   </div>
 </div>
 <script>
-let selected=[],currentPath='/mnt/secure/srv/hddmedia/anime',pollTimer=null,jobRunning=false,translatePhase=false;
+let selected=[],currentPath='/mnt/secure/srv/hddmedia/anime',pollTimer=null,jobRunning=false,translatePhase=false,currentMode='translate';
 function toast(msg,ok=true){const el=document.getElementById('toast');el.textContent=msg;el.style.borderColor=ok?'var(--green)':'var(--red)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3500);}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function showTab(name){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+name).classList.add('active');const tabs=['browser','quota','keys','settings','log','history'];document.querySelectorAll('.tab')[tabs.indexOf(name)].classList.add('active');if(name==='quota')loadQuota();if(name==='keys')loadKeys();if(name==='settings')loadSettings();if(name==='log')loadLog();if(name==='history')loadHistory();}
@@ -203,7 +215,7 @@ function showTab(name){document.querySelectorAll('.panel').forEach(p=>p.classLis
 async function navigate(path){
   if(path!==undefined)currentPath=path;else currentPath=document.getElementById('path-input').value.trim();
   document.getElementById('path-input').value=currentPath;
-  const res=await fetch('/api/browse?path='+encodeURIComponent(currentPath));
+  const res=await fetch('/api/browse?path='+encodeURIComponent(currentPath)+'&mode='+currentMode);
   if(!res.ok){toast('Cannot open path',false);return;}
   const data=await res.json();
   const dirEl=document.getElementById('dir-list');dirEl.innerHTML='';
@@ -221,6 +233,14 @@ async function navigate(path){
 }
 function selectAll(){document.querySelectorAll('#file-list input[type=checkbox]').forEach(cb=>{if(!cb.checked){cb.checked=true;cb.onchange();}});}
 function unselectAll(){document.querySelectorAll('#file-list input[type=checkbox]').forEach(cb=>{if(cb.checked){cb.checked=false;cb.onchange();}});}
+function switchMode(mode){
+  currentMode=mode;selected=[];updateQueue();
+  document.getElementById('extract-options').style.display=mode==='extract'?'block':'none';
+  document.getElementById('file-label').textContent=mode==='extract'?'Video Files (.mkv)':'Subtitle Files (.srt / .ass)';
+  document.getElementById('analyze-btn').textContent=mode==='extract'?'Probe':'Analyze';
+  document.getElementById('translate-btn').textContent=mode==='extract'?'Extract':'Translate';
+  navigate();
+}
 async function deleteSelected(){
   const sel=Array.from(document.querySelectorAll('#file-list input[type=checkbox]:checked')).map(cb=>cb.dataset.path);
   if(!sel.length){toast('Nothing selected',false);return;}
@@ -243,20 +263,43 @@ function updateQueue(){
   if(!jobRunning)checkAnalyzeStatus();
 }
 function removeFile(btn){const path=btn.dataset.path;selected=selected.filter(p=>p!==path);updateQueue();navigate();}
-async function checkAnalyzeStatus(){const res=await fetch('/api/analyze-status').then(r=>r.json());document.getElementById('translate-btn').disabled=!res.ready||jobRunning||translatePhase;}
+async function checkAnalyzeStatus(){
+  if(currentMode==='extract'){
+    // In extract mode, enable Extract button when queue has files and not running
+    document.getElementById('translate-btn').disabled=selected.length===0||jobRunning||translatePhase;
+  } else {
+    const res=await fetch('/api/analyze-status').then(r=>r.json());
+    document.getElementById('translate-btn').disabled=!res.ready||jobRunning||translatePhase;
+  }
+}
 
 async function runAnalyze(){
   if(!selected.length)return;
-  const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
-  if(res.ok){setJobRunning(true);showTab('log');startSSE();}
-  else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);}
+  if(currentMode==='extract'){
+    const res=await fetch('/api/probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
+    if(res.ok){setJobRunning(true);showTab('log');startSSE();}
+    else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);}
+  } else {
+    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
+    if(res.ok){setJobRunning(true);showTab('log');startSSE();}
+    else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);}
+  }
 }
 async function runTranslate(){
-  translatePhase=true;
-  document.getElementById('translate-btn').disabled=true;
-  const res=await fetch('/api/translate',{method:'POST'});
-  if(res.ok){setJobRunning(true);showTab('log');startSSE();}
-  else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);translatePhase=false;document.getElementById('translate-btn').disabled=false;}
+  if(currentMode==='extract'){
+    const track=parseInt(document.getElementById('ext-track').value)||0;
+    const suffix=document.getElementById('ext-suffix').value.trim();
+    if(!suffix){toast('Enter a suffix',false);return;}
+    translatePhase=true;document.getElementById('translate-btn').disabled=true;
+    const res=await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected,track_index:track,suffix:suffix})});
+    if(res.ok){setJobRunning(true);showTab('log');startSSE();}
+    else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);translatePhase=false;document.getElementById('translate-btn').disabled=false;}
+  } else {
+    translatePhase=true;document.getElementById('translate-btn').disabled=true;
+    const res=await fetch('/api/translate',{method:'POST'});
+    if(res.ok){setJobRunning(true);showTab('log');startSSE();}
+    else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);translatePhase=false;document.getElementById('translate-btn').disabled=false;}
+  }
 }
 async function cancelJob(){
   document.getElementById('cancel-btn').disabled=true;
@@ -360,6 +403,7 @@ async function loadSettings(){
   document.getElementById('s-cool').value=s.RETRY_COOLDOWN;document.getElementById('s-maxblob').value=s.MAX_BLOB_LINES;
   document.getElementById('s-conflict').value=s.FILE_CONFLICT||'overwrite';
   document.getElementById('s-format').value=s.OUTPUT_FORMAT||'ass';
+  document.getElementById('s-extformat').value=s.EXTRACT_FORMAT||'ass';
   document.getElementById('s-embed').value=String(s.EMBED_FONT!==false);
   document.getElementById('s-preserve').value=String(s.PRESERVE_ASS_POSITIONS===true);
   document.getElementById('s-fontname').value=s.FONT_NAME||'Amiri';
@@ -382,7 +426,7 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),FILE_CONFLICT:document.getElementById('s-conflict').value,OUTPUT_FORMAT:document.getElementById('s-format').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
+  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),FILE_CONFLICT:document.getElementById('s-conflict').value,OUTPUT_FORMAT:document.getElementById('s-format').value,EXTRACT_FORMAT:document.getElementById('s-extformat').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(res.ok)toast('Settings saved');else{const e=await res.json();toast(e.detail||'Save failed',false);}
 }

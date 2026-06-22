@@ -17,6 +17,7 @@ from pydantic import BaseModel
 import config
 import db
 import job
+import extract
 import logger
 from ui import HTML_UI
 
@@ -25,6 +26,12 @@ app = FastAPI(title="Bulk Subtitle Translator", version="2.1.0")
 
 class TranslationRequest(BaseModel):
     files: List[str]
+
+
+class ExtractRequest(BaseModel):
+    files: List[str]
+    track_index: int
+    suffix: str
 
 
 class AddKeyRequest(BaseModel):
@@ -43,6 +50,7 @@ class SettingsRequest(BaseModel):
     OUTPUT_FORMAT: str
     EMBED_FONT: bool
     PRESERVE_ASS_POSITIONS: bool
+    EXTRACT_FORMAT: str
     FONT_NAME: str
     FONT_SIZE: int
     FONT_OUTLINE: int
@@ -196,23 +204,49 @@ async def api_analyze_status():
     return JSONResponse(job.get_analyze_summary())
 
 
+@app.post("/api/probe")
+async def api_probe(payload: TranslationRequest, background_tasks: BackgroundTasks):
+    """Probe MKV files for subtitle tracks."""
+    if logger.is_running():
+        raise HTTPException(409, "A job is already running")
+    if not payload.files:
+        raise HTTPException(400, "No files provided")
+    background_tasks.add_task(extract.run_probe, payload.files)
+    return {"ok": True, "queued": len(payload.files)}
+
+
+@app.post("/api/extract")
+async def api_extract(payload: ExtractRequest, background_tasks: BackgroundTasks):
+    """Extract subtitle track from MKV files."""
+    if logger.is_running():
+        raise HTTPException(409, "A job is already running")
+    if not payload.files:
+        raise HTTPException(400, "No files provided")
+    if not payload.suffix:
+        raise HTTPException(400, "Suffix is required")
+    background_tasks.add_task(extract.run_extract, payload.files, payload.track_index, payload.suffix)
+    return {"ok": True, "queued": len(payload.files)}
+
+
 @app.get("/api/browse")
-async def api_browse(path: str = "/"):
+async def api_browse(path: str = "/", mode: str = "translate"):
     p = Path(path.strip("'\" ")).resolve()
     if not p.exists() or not p.is_dir():
         raise HTTPException(404, f"Not a directory: {path}")
-    dirs, srts = [], []
+    dirs, files = [], []
     sub_exts = {".srt", ".ass"}
+    mkv_exts = {".mkv", ".mp4", ".avi"}
+    target_exts = mkv_exts if mode == "extract" else sub_exts
     for item in sorted(p.iterdir()):
         if item.is_dir() and not item.name.startswith("."):
             dirs.append({"name": item.name, "path": str(item)})
-        elif item.is_file() and item.suffix.lower() in sub_exts:
-            srts.append({
+        elif item.is_file() and item.suffix.lower() in target_exts:
+            files.append({
                 "name": item.name,
                 "path": str(item),
                 "size_kb": round(item.stat().st_size / 1024, 1),
             })
-    return JSONResponse({"current": str(p), "parent": str(p.parent), "dirs": dirs, "files": srts})
+    return JSONResponse({"current": str(p), "parent": str(p.parent), "dirs": dirs, "files": files})
 
 
 class RenameRequest(BaseModel):
