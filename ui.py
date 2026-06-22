@@ -16,7 +16,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .tabs{display:flex;border-bottom:1px solid var(--border);background:var(--surface);padding:0 8px;flex-wrap:wrap}
 .tab{padding:10px 14px;cursor:pointer;font-size:13px;color:var(--muted);border-bottom:2px solid transparent;transition:all .2s;font-weight:500}
 .tab:hover{color:var(--text)}.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-.panel{flex:1;overflow-y:auto;padding:20px;display:none}.panel.active{display:block}
+.panel{flex:1;overflow-y:auto;padding:20px;display:none}.panel.active{display:flex;flex-direction:column}
 .path-bar{display:flex;gap:8px;margin-bottom:16px}
 .path-bar input{flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-family:var(--mono);font-size:13px}
 .path-bar button{background:var(--accent);color:#fff;border:none;padding:9px 18px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}
@@ -117,18 +117,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
     <div class="tab" onclick="showTab('log')">Log</div>
     <div class="tab" onclick="showTab('history')">History</div>
   </div>
-  <div id="tab-browser" class="panel active" style="display:flex;flex-direction:column;overflow:hidden;padding:20px">
-    <div style="flex-shrink:0">
-      <div style="display:flex;gap:16px;margin-bottom:14px;align-items:center">
-        <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="translate" checked onchange="switchMode('translate')"> Translate</label>
-        <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="extract" onchange="switchMode('extract')"> Extract Subs</label>
+  <div id="tab-browser" class="panel active">
+    <div style="display:flex;flex-direction:column;height:100%">
+      <div style="flex-shrink:0">
+        <div style="display:flex;gap:16px;margin-bottom:14px;align-items:center">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="translate" checked onchange="switchMode('translate')"> Translate</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="extract" onchange="switchMode('extract')"> Extract Subs</label>
+        </div>
+        <div class="path-bar"><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
+        <div id="dir-list" class="dir-list"></div>
+        <div class="toolbar" id="file-toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" id="delete-btn" onclick="deleteSelected()">Delete Selected</button></div>
+        <div class="sec-label" id="file-label">Subtitle Files (.srt / .ass)</div>
       </div>
-      <div class="path-bar"><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
-      <div id="dir-list" class="dir-list"></div>
-      <div class="toolbar" id="file-toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" id="delete-btn" onclick="deleteSelected()">Delete Selected</button></div>
-      <div class="sec-label" id="file-label">Subtitle Files (.srt / .ass)</div>
+      <div id="file-list" class="file-list" style="flex:1;overflow-y:auto"></div>
     </div>
-    <div id="file-list" class="file-list" style="flex:1;overflow-y:auto"></div>
   </div>
   <div id="tab-quota" class="panel">
     <div class="sec-label" style="margin-bottom:12px">Model Quotas - Period: <span id="quota-date"></span></div>
