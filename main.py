@@ -51,7 +51,7 @@ class SettingsRequest(BaseModel):
     OUTPUT_FORMAT: str
     EMBED_FONT: bool
     PRESERVE_ASS_POSITIONS: bool
-    EXTRACT_FORMAT: str
+    CONVERT_TO_SRT_AFTER_EXTRACT: bool
     FONT_NAME: str
     FONT_SIZE: int
     FONT_OUTLINE: int

@@ -202,16 +202,21 @@ async function loadProbeResults(){
   // Deduplicate by index
   const unique=[];const seen=new Set();
   tracks.forEach(t=>{const k=t.index+'-'+t.lang+'-'+t.codec+'-'+t.title;if(!seen.has(k)){seen.add(k);unique.push(t);}});
-  trackEl.innerHTML=unique.map(t=>'<div class="track-item'+(selectedTrack===t.index?' sel':'')+'" onclick="selectTrack('+t.index+',this)"><strong>'+t.index+'</strong> <span style="color:var(--muted)">['+escHtml(t.lang)+']</span> ('+escHtml(t.codec)+') '+escHtml(t.title)+'</div>').join('');
+  trackEl.innerHTML=unique.map(t=>'<div class="track-item'+(selectedTrack===t.index?' sel':'')+'" onclick="selectTrack('+t.index+',this,\''+t.codec+'\')"><strong>'+t.index+'</strong> <span style="color:var(--muted)">['+escHtml(t.lang)+']</span> ('+escHtml(t.codec)+') '+escHtml(t.title)+'</div>').join('');
 }
 
-function selectTrack(idx,el){
+function selectTrack(idx,el,codec){
   selectedTrack=idx;
   document.querySelectorAll('.track-item').forEach(t=>t.classList.remove('sel'));
   el.classList.add('sel');
-  document.getElementById('style-section').style.display='block';
+  if(codec==='ass'||codec==='ssa'){
+    document.getElementById('style-section').style.display='block';
+    loadProbeStyles();
+  } else {
+    document.getElementById('style-section').style.display='none';
+    document.getElementById('style-list').innerHTML='<div class="empty" style="font-size:12px">SRT tracks have no styles</div>';
+  }
   checkAnalyzeStatus();
-  loadProbeStyles();
 }
 
 async function loadProbeStyles(){
@@ -272,7 +277,7 @@ async function loadSettings(){
   document.getElementById('s-cool').value=s.RETRY_COOLDOWN;
   document.getElementById('s-maxblob').value=s.MAX_BLOB_LINES;
   document.getElementById('s-format').value=s.OUTPUT_FORMAT||'ass';
-  document.getElementById('s-extformat').value=s.EXTRACT_FORMAT||'ass';
+  document.getElementById('s-convert').value=String(s.CONVERT_TO_SRT_AFTER_EXTRACT===true);
   document.getElementById('s-conflict').value=s.FILE_CONFLICT||'overwrite';
   document.getElementById('s-embed').value=String(s.EMBED_FONT!==false);
   document.getElementById('s-preserve').value=String(s.PRESERVE_ASS_POSITIONS===true);
@@ -296,7 +301,7 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),OUTPUT_FORMAT:document.getElementById('s-format').value,EXTRACT_FORMAT:document.getElementById('s-extformat').value,FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
+  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),OUTPUT_FORMAT:document.getElementById('s-format').value,CONVERT_TO_SRT_AFTER_EXTRACT:document.getElementById('s-convert').value==='true',FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(res.ok)toast('Settings saved');else{const e=await res.json();toast(e.detail||'Save failed',false);}
 }
