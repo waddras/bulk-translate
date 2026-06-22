@@ -125,11 +125,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="extract" onchange="switchMode('extract')"> Extract Subs</label>
         </div>
         <div class="path-bar"><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
-        <div id="dir-list" class="dir-list"></div>
         <div class="toolbar" id="file-toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" id="delete-btn" onclick="deleteSelected()">Delete Selected</button></div>
         <div class="sec-label" id="file-label">Subtitle Files (.srt / .ass)</div>
       </div>
-      <div id="file-list" class="file-list" style="flex:1;overflow-y:auto"></div>
+      <div style="flex:1;overflow-y:auto">
+        <div id="dir-list" class="dir-list"></div>
+        <div id="file-list" class="file-list"></div>
+      </div>
     </div>
   </div>
   <div id="tab-quota" class="panel">
