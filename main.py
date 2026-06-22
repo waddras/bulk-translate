@@ -19,7 +19,7 @@ import db
 import job
 import extract
 import logger
-from ui import HTML_UI
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Bulk Subtitle Translator", version="2.1.0")
 
@@ -233,7 +233,7 @@ async def api_extract(payload: ExtractRequest, background_tasks: BackgroundTasks
 
 
 @app.get("/api/probe-styles")
-async def api_probe_styles():
+async def api_probe_styles(track: int = 0):
     """Return styles detected during last probe."""
     return JSONResponse({"styles": extract.get_probe_styles()})
 
@@ -304,6 +304,11 @@ async def api_history_detail(job_id: str):
     return JSONResponse(data)
 
 
-@app.get("/", response_class=HTMLResponse)
-async def ui():
-    return HTMLResponse(HTML_UI)
+
+# Static files - MUST be last (catch-all)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/")
+async def root():
+    return HTMLResponse(Path("static/index.html").read_text(encoding="utf-8"))
