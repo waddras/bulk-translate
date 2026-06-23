@@ -4,6 +4,22 @@ let selected=[], currentPath='/mnt/secure/srv/hddmedia/anime', jobRunning=false,
 // === Utilities ===
 function toast(msg,ok=true){const el=document.getElementById('toast');el.textContent=msg;el.style.borderColor=ok?'var(--green)':'var(--red)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3500);}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function clearAll(){
+  selected=[];selectedTrack=null;
+  updateQueue();
+  document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
+  document.getElementById('style-section').style.display='none';
+  document.getElementById('style-list').innerHTML='';
+  navigate();
+  toast('Cleared');
+}
+function simplifyCodec(codec){
+  if(codec==='subrip'||codec==='mov_text')return'srt';
+  if(codec==='ass'||codec==='ssa')return'ass';
+  if(codec==='webvtt')return'vtt';
+  if(codec==='dvd_subtitle'||codec==='hdmv_pgs_subtitle'||codec==='dvb_subtitle')return'image';
+  return codec;
+}
 
 // === Tabs ===
 const TAB_NAMES=['files','quota','keys','settings','log','history'];
@@ -202,7 +218,14 @@ async function loadProbeResults(){
   // Deduplicate by index
   const unique=[];const seen=new Set();
   tracks.forEach(t=>{const k=t.index+'-'+t.lang+'-'+t.codec+'-'+t.title;if(!seen.has(k)){seen.add(k);unique.push(t);}});
-  trackEl.innerHTML=unique.map(t=>'<div class="track-item'+(selectedTrack===t.index?' sel':'')+'" onclick="selectTrack('+t.index+',this,\''+t.codec+'\')"><strong>'+t.index+'</strong> <span style="color:var(--muted)">['+escHtml(t.lang)+']</span> ('+escHtml(t.codec)+') '+escHtml(t.title)+'</div>').join('');
+  trackEl.innerHTML=unique.map(t=>{
+    const sc=simplifyCodec(t.codec);
+    const isImage=sc==='image';
+    const cls='track-item'+(selectedTrack===t.index&&!isImage?' sel':'')+(isImage?' disabled':'');
+    const onclick=isImage?'':'onclick="selectTrack('+t.index+',this,\''+t.codec+'\')"';
+    const label=isImage?'<span style="color:var(--red)">image - cannot extract</span>':'<span>('+sc+')</span>';
+    return'<div class="'+cls+'" '+onclick+'><strong>'+t.index+'</strong> <span style="color:var(--muted)">['+escHtml(t.lang)+']</span> '+label+' '+escHtml(t.title)+'</div>';
+  }).join('');
 }
 
 function selectTrack(idx,el,codec){

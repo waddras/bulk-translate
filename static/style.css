@@ -98,4 +98,5 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .extract-panel{flex:1;overflow-y:auto;padding:12px}
 .track-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:4px;cursor:pointer;font-size:12px;transition:all .15s}
 .track-item:hover{border-color:var(--accent)}.track-item.sel{border-color:var(--green);background:#1a2a1a}
+.track-item.disabled{opacity:.4;cursor:not-allowed;border-color:var(--border)}.track-item.disabled:hover{border-color:var(--border)}
 .style-cb-row{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;cursor:pointer}
