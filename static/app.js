@@ -71,7 +71,8 @@ async function navigate(path){
   if(!data.files.length){fileEl.innerHTML='<div class="empty">No files here</div>';return;}
   data.files.forEach(f=>{
     const isSel=selected.includes(f.path);const el=document.createElement('div');el.className='file-item'+(isSel?' sel':'');
-    el.innerHTML=`<input type="checkbox" ${isSel?'checked':''} data-path="${escHtml(f.path)}"><span class="file-name">${escHtml(f.name)}</span><span class="file-size">${f.size_kb} KB</span>${currentMode==='translate'?'<div class="file-actions"><button onclick="renameFile(\''+escHtml(f.path)+'\',\''+escHtml(f.name)+'\')">ren</button></div>':''}`;
+    const renBtn=currentMode==='translate'?'<div class="file-actions"><button onclick="renameFile(this)" data-path="'+escHtml(f.path)+'" data-name="'+escHtml(f.name)+'">ren</button></div>':'';
+    el.innerHTML='<input type="checkbox" '+(isSel?'checked':'')+' data-path="'+escHtml(f.path)+'"><span class="file-name">'+escHtml(f.name)+'</span><span class="file-size">'+f.size_kb+' KB</span>'+renBtn;
     const cb=el.querySelector('input');
     cb.onchange=()=>{if(cb.checked){if(!selected.includes(f.path))selected.push(f.path);}else{selected=selected.filter(p=>p!==f.path);}el.classList.toggle('sel',cb.checked);updateQueue();};
     fileEl.appendChild(el);
@@ -87,7 +88,8 @@ async function deleteSelected(){
   if(res.ok){const r=await res.json();toast('Deleted '+r.deleted+' files');selected=selected.filter(p=>!sel.includes(p));updateQueue();navigate();}
   else toast('Delete failed',false);
 }
-async function renameFile(path,oldName){
+async function renameFile(btn){
+  const path=btn.dataset.path;const oldName=btn.dataset.name;
   const newName=prompt('New filename:',oldName);if(!newName||newName===oldName)return;
   const res=await fetch('/api/file/rename',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,new_name:newName})});
   if(res.ok){toast('Renamed');navigate();}else{const e=await res.json();toast(e.detail||'Rename failed',false);}
