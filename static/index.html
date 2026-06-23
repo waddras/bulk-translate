@@ -9,7 +9,7 @@
 <body>
 <div class="layout">
 <div class="main">
-  <div class="header"><div class="dot dot-green" id="status-dot"></div><h1>Bulk Subtitle Translator</h1><span class="badge">v3.0</span><button class="btn-sm" style="margin-left:auto" onclick="clearAll()">Clear</button></div>
+  <div class="header"><div class="dot dot-green" id="status-dot"></div><h1>Bulk Subtitle Translator</h1><span class="badge">v3.0</span><button class="clear-btn" onclick="clearAll()">Clear</button></div>
   <div class="tabs">
     <div class="tab active" onclick="showTab('files')">Files</div>
     <div class="tab" onclick="showTab('quota')">Quotas</div>
@@ -64,6 +64,7 @@
       <div class="field"><label>File Conflict</label><select id="s-conflict"><option value="overwrite">Overwrite</option><option value="rename">Rename</option></select></div>
       <div class="field"><label>Embed Font (ASS)</label><select id="s-embed"><option value="true">Yes</option><option value="false">No</option></select></div>
       <div class="field"><label>Preserve ASS Positions</label><select id="s-preserve"><option value="true">Yes</option><option value="false">No</option></select></div>
+      <div class="field"><label>Preserve Tags (comma-separated, end with ;)</label><input id="s-tags" type="text" placeholder="pos, an, move, fad, fade;"></div>
       <div class="field"><label>Font Name</label><input id="s-fontname" type="text"></div>
       <div class="field"><label>Font Size</label><input id="s-fontsize" type="number" min="1"></div>
       <div class="field"><label>Font Outline</label><input id="s-outline" type="number" min="0"></div>
@@ -94,7 +95,13 @@
 
 <div class="sidebar">
   <div class="sb-header"><h2 id="sb-title">Queue</h2><div class="q-count"><span id="q-count">0</span> files selected</div></div>
-  <div id="queue-panel" class="queue-list"><div class="empty">No files queued</div></div>
+  <div id="queue-panel" class="queue-list">
+    <div class="empty">No files queued</div>
+  </div>
+  <div id="translate-styles" style="display:none;padding:12px;border-top:1px solid var(--border)">
+    <div class="sec-label" style="margin-bottom:8px">Keep Styles (ASS only)</div>
+    <div id="translate-style-list"></div>
+  </div>
   <div id="extract-panel" class="extract-panel" style="display:none">
     <div class="sec-label" style="margin-bottom:8px">1. Select Track</div>
     <div id="track-list"><div class="empty" style="font-size:12px">Run Probe first</div></div>

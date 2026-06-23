@@ -26,6 +26,7 @@ app = FastAPI(title="Bulk Subtitle Translator", version="2.1.0")
 
 class TranslationRequest(BaseModel):
     files: List[str]
+    keep_styles: List[str] = []
 
 
 class ExtractRequest(BaseModel):
@@ -51,6 +52,7 @@ class SettingsRequest(BaseModel):
     OUTPUT_FORMAT: str
     EMBED_FONT: bool
     PRESERVE_ASS_POSITIONS: bool
+    PRESERVE_TAGS: str
     CONVERT_TO_SRT_AFTER_EXTRACT: bool
     FONT_NAME: str
     FONT_SIZE: int
@@ -184,7 +186,7 @@ async def api_analyze(payload: TranslationRequest, background_tasks: BackgroundT
         raise HTTPException(409, "A job is already running")
     if not payload.files:
         raise HTTPException(400, "No files provided")
-    background_tasks.add_task(job.run_analyze, payload.files)
+    background_tasks.add_task(job.run_analyze, payload.files, payload.keep_styles or None)
     return {"ok": True, "queued": len(payload.files)}
 
 
@@ -203,6 +205,14 @@ async def api_translate(background_tasks: BackgroundTasks):
 @app.get("/api/analyze-status")
 async def api_analyze_status():
     return JSONResponse(job.get_analyze_summary())
+
+
+@app.post("/api/detect-styles")
+async def api_detect_styles(payload: TranslationRequest):
+    """Detect ASS styles from selected subtitle files (for translate flow)."""
+    import srt_pre
+    styles = srt_pre.get_styles_from_files(payload.files)
+    return JSONResponse({"styles": styles})
 
 
 @app.post("/api/probe")

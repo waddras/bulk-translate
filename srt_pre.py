@@ -15,29 +15,40 @@ import pysubs2
 from config import cfg
 
 _ALL_TAGS_RE = re.compile(r"\{[^}]*\}")
-_POS_TAG_RE = re.compile(r"\\(?:pos|an|move|fad|fade)\([^)]*\)")
-_STRIP_TAG_RE = re.compile(r"\{[^}]*\}")
+
+
+def _get_preserve_tags() -> list:
+    """Parse PRESERVE_TAGS setting into a list of tag names."""
+    raw = cfg.get("PRESERVE_TAGS", "pos, an, move, fad, fade;")
+    raw = raw.rstrip(";").strip()
+    return [t.strip() for t in raw.split(",") if t.strip()]
 
 
 def _extract_pos_tags(raw: str) -> tuple:
-    """Extract position tags from ASS text, return (pos_tags_string, cleaned_text).
+    """Extract preserved tags from ASS text based on PRESERVE_TAGS setting.
 
-    pos_tags_string contains only the preserved tags wrapped in {}, e.g. "{\\pos(320,50)\\an8}"
-    cleaned_text has all tags removed.
+    Returns (pos_tags_string, cleaned_text).
     """
-    # Find all tag blocks
+    preserve_list = _get_preserve_tags()
+    if not preserve_list:
+        clean = _ALL_TAGS_RE.sub("", raw)
+        clean = clean.replace(r"\N", "\n").replace(r"\n", "\n").strip()
+        return "", clean
+
+    # Build regex to match any of the preserved tag names
+    # Matches \tagname(...) or \tagname followed by a numeric/text value
+    tag_pattern = "|".join(re.escape(t) for t in preserve_list)
+    preserve_re = re.compile(r"\\(?:" + tag_pattern + r")(?:\([^)]*\)|[^\\}]*)")
+
     preserved = []
     for match in re.finditer(r"\{([^}]*)\}", raw):
         block_content = match.group(1)
-        # Extract position-related tags from this block
-        pos_tags = _POS_TAG_RE.findall(block_content)
-        if pos_tags:
-            preserved.extend(pos_tags)
+        found = preserve_re.findall(block_content)
+        if found:
+            preserved.extend(found)
 
-    # Build preserved tag string
     pos_string = "{" + "".join(preserved) + "}" if preserved else ""
 
-    # Clean all tags from text
     clean = _ALL_TAGS_RE.sub("", raw)
     clean = clean.replace(r"\N", "\n").replace(r"\n", "\n").strip()
 
@@ -60,13 +71,21 @@ def should_drop(text: str) -> bool:
     return False
 
 
-def parse_file(path) -> list:
-    """Return kept cues as [{text, start, end, pos_tags}, ...] in chronological order."""
+def parse_file(path, keep_styles: list = None) -> list:
+    """Return kept cues as [{text, start, end, pos_tags}, ...] in chronological order.
+
+    If keep_styles is provided, only cues whose style is in the list are kept.
+    """
     preserve_pos = cfg.get("PRESERVE_ASS_POSITIONS", False)
     subs = pysubs2.SSAFile.load(str(path))
     cues = []
 
     for event in subs:
+        # Filter by style if specified
+        if keep_styles is not None and hasattr(event, 'style'):
+            if event.style not in keep_styles:
+                continue
+
         if preserve_pos and event.text:
             pos_tags, clean = _extract_pos_tags(event.text)
         else:
@@ -84,3 +103,21 @@ def parse_file(path) -> list:
         })
 
     return cues
+
+
+
+def get_styles_from_file(path) -> list:
+    """Return list of style names from an ASS/SSA file. Returns [] for SRT."""
+    try:
+        subs = pysubs2.SSAFile.load(str(path))
+        return list(subs.styles.keys())
+    except Exception:
+        return []
+
+
+def get_styles_from_files(paths: list) -> list:
+    """Return unique style names across all files (sorted)."""
+    all_styles = set()
+    for p in paths:
+        all_styles.update(get_styles_from_file(p))
+    return sorted(all_styles)

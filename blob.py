@@ -15,7 +15,7 @@ from logger import jlog, log
 import srt_pre
 
 
-def build_blob(files: list):
+def build_blob(files: list, keep_styles: list = None):
     """Return (meta, payload, stats).
 
     meta:    {tag: {file_idx, file_path, block_idx, start, end, text, rep}}
@@ -30,7 +30,7 @@ def build_blob(files: list):
     for file_idx, fpath in enumerate(files, start=1):
         file_id = f"{file_idx:02d}"
         try:
-            cues = srt_pre.parse_file(fpath)
+            cues = srt_pre.parse_file(fpath, keep_styles=keep_styles)
         except Exception as e:
             jlog(f"  Failed to parse {fpath.name}: {e}")
             continue

@@ -100,3 +100,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .track-item:hover{border-color:var(--accent)}.track-item.sel{border-color:var(--green);background:#1a2a1a}
 .track-item.disabled{opacity:.4;cursor:not-allowed;border-color:var(--border)}.track-item.disabled:hover{border-color:var(--border)}
 .style-cb-row{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;cursor:pointer}
+
+
+.clear-btn{background:none;border:1px solid var(--yellow);color:var(--yellow);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;margin-left:auto}
+.clear-btn:hover{background:#3a3a1a}
+.dir-item.go-up{background:#1a1d27;border-color:var(--accent);color:var(--accent);font-weight:600}
+.dir-item.go-up:hover{background:#1e2035}

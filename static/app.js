@@ -10,6 +10,7 @@ function clearAll(){
   document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
   document.getElementById('style-section').style.display='none';
   document.getElementById('style-list').innerHTML='';
+  document.getElementById('translate-styles').style.display='none';
   navigate();
   toast('Cleared');
 }
@@ -54,7 +55,7 @@ async function navigate(path){
   if(!res.ok){toast('Cannot open path',false);return;}
   const data=await res.json();
   const dirEl=document.getElementById('dir-list');dirEl.innerHTML='';
-  if(data.current!==data.parent){const up=document.createElement('div');up.className='dir-item';up.textContent='.. (Go Up)';up.onclick=()=>navigate(data.parent);dirEl.appendChild(up);}
+  if(data.current!==data.parent){const up=document.createElement('div');up.className='dir-item go-up';up.textContent='.. (Go Up)';up.onclick=()=>navigate(data.parent);dirEl.appendChild(up);}
   data.dirs.forEach(d=>{const el=document.createElement('div');el.className='dir-item';el.textContent=d.name;el.onclick=()=>navigate(d.path);dirEl.appendChild(el);});
   const fileEl=document.getElementById('file-list');fileEl.innerHTML='';
   if(!data.files.length){fileEl.innerHTML='<div class="empty">No files here</div>';return;}
@@ -89,9 +90,13 @@ function updateQueue(){
   document.getElementById('analyze-btn').disabled=selected.length===0||jobRunning;
   if(!jobRunning)document.getElementById('translate-btn').disabled=true;
   if(currentMode==='translate'){
-    if(!selected.length){el.innerHTML='<div class="empty">No files queued</div>';return;}
+    if(!selected.length){el.innerHTML='<div class="empty">No files queued</div>';document.getElementById('translate-styles').style.display='none';return;}
     el.innerHTML=selected.map(p=>{const name=p.split('/').pop();return'<div class="q-item"><span class="q-name" title="'+escHtml(p)+'">'+escHtml(name)+'</span><button class="rm" onclick="removeFile(this)" data-path="'+escHtml(p)+'">x</button></div>';}).join('');
     checkAnalyzeStatus();
+    // Detect styles if any ASS files selected
+    const hasAss=selected.some(p=>p.toLowerCase().endsWith('.ass'));
+    if(hasAss)detectTranslateStyles();
+    else document.getElementById('translate-styles').style.display='none';
   }
 }
 function removeFile(btn){const path=btn.dataset.path;selected=selected.filter(p=>p!==path);updateQueue();navigate();}
@@ -99,6 +104,18 @@ async function checkAnalyzeStatus(){
   if(currentMode==='extract'){document.getElementById('translate-btn').disabled=selectedTrack===null||selected.length===0||jobRunning||translatePhase;return;}
   const res=await fetch('/api/analyze-status').then(r=>r.json());
   document.getElementById('translate-btn').disabled=!res.ready||jobRunning||translatePhase;
+}
+
+async function detectTranslateStyles(){
+  const assFiles=selected.filter(p=>p.toLowerCase().endsWith('.ass'));
+  if(!assFiles.length){document.getElementById('translate-styles').style.display='none';return;}
+  const res=await fetch('/api/detect-styles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:assFiles})});
+  const data=await res.json();
+  const styles=data.styles||[];
+  const el=document.getElementById('translate-style-list');
+  if(!styles.length){document.getElementById('translate-styles').style.display='none';return;}
+  document.getElementById('translate-styles').style.display='block';
+  el.innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" checked class="translate-style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
 }
 
 // === Analyze / Probe / Translate / Extract ===
@@ -118,7 +135,8 @@ async function runAnalyze(){
     else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);resetBtnLabels();}
   } else {
     setBtnLoading('analyze-btn','Analyzing...');
-    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
+    const keepStyles=Array.from(document.querySelectorAll('.translate-style-cb:checked')).map(cb=>cb.value);
+    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected,keep_styles:keepStyles})});
     if(res.ok){setJobRunning(true);showTab('log');startSSE();}
     else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);resetBtnLabels();}
   }
@@ -304,6 +322,7 @@ async function loadSettings(){
   document.getElementById('s-conflict').value=s.FILE_CONFLICT||'overwrite';
   document.getElementById('s-embed').value=String(s.EMBED_FONT!==false);
   document.getElementById('s-preserve').value=String(s.PRESERVE_ASS_POSITIONS===true);
+  document.getElementById('s-tags').value=s.PRESERVE_TAGS||'pos, an, move, fad, fade;';
   document.getElementById('s-fontname').value=s.FONT_NAME||'Amiri';
   document.getElementById('s-fontsize').value=s.FONT_SIZE||40;
   document.getElementById('s-outline').value=s.FONT_OUTLINE!=null?s.FONT_OUTLINE:1;
@@ -324,7 +343,7 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),OUTPUT_FORMAT:document.getElementById('s-format').value,CONVERT_TO_SRT_AFTER_EXTRACT:document.getElementById('s-convert').value==='true',FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
+  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),OUTPUT_FORMAT:document.getElementById('s-format').value,CONVERT_TO_SRT_AFTER_EXTRACT:document.getElementById('s-convert').value==='true',FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',PRESERVE_TAGS:document.getElementById('s-tags').value,FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(res.ok)toast('Settings saved');else{const e=await res.json();toast(e.detail||'Save failed',false);}
 }

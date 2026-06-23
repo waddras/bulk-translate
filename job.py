@@ -57,7 +57,7 @@ def invalidate_analyze():
 
 
 # ── Phase 1+2: Analyze ────────────────────────────────────────────────────────
-async def run_analyze(file_paths: list) -> None:
+async def run_analyze(file_paths: list, keep_styles: list = None) -> None:
     logger.reset_job_status()
     logger.clear_cancel()
     invalidate_analyze()
@@ -79,7 +79,7 @@ async def run_analyze(file_paths: list) -> None:
         # Phase 1
         jlog(SEP)
         jlog("PHASE 1 - Building blob...")
-        meta, payload, stats = blob.build_blob(files)
+        meta, payload, stats = blob.build_blob(files, keep_styles=keep_styles)
         if stats["total"] == 0:
             raise ValueError("No dialogue cues found in selected files.")
         if stats["total"] > cfg["MAX_BLOB_LINES"]:
