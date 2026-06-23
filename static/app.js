@@ -150,6 +150,7 @@ function resetBtnLabels(){
   document.getElementById('analyze-btn').disabled=selected.length===0||jobRunning;
 }
 
+async function runAnalyze(){
   if(!selected.length)return;
   if(currentMode==='extract'){
     if(extractStep==='tracks'){
