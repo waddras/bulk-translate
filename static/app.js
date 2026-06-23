@@ -92,8 +92,8 @@ async function navigate(path){
     fileEl.appendChild(el);
   });
 }
-function selectAll(){document.querySelectorAll('#file-list input[type=checkbox]').forEach(cb=>{if(!cb.checked){cb.checked=true;cb.onchange();}});}
-function unselectAll(){document.querySelectorAll('#file-list input[type=checkbox]').forEach(cb=>{if(cb.checked){cb.checked=false;cb.onchange();}});}
+function selectAll(){document.querySelectorAll('#file-list .file-item').forEach(el=>{if(el.style.display==='none')return;const cb=el.querySelector('input[type=checkbox]');if(cb&&!cb.checked){cb.checked=true;cb.onchange();}});}
+function unselectAll(){document.querySelectorAll('#file-list .file-item').forEach(el=>{if(el.style.display==='none')return;const cb=el.querySelector('input[type=checkbox]');if(cb&&cb.checked){cb.checked=false;cb.onchange();}});}
 async function deleteSelected(){
   const sel=Array.from(document.querySelectorAll('#file-list input[type=checkbox]:checked')).map(cb=>cb.dataset.path);
   if(!sel.length){toast('Nothing selected',false);return;}
