@@ -1,16 +1,17 @@
 // === State ===
-let selected=[], currentPath='/mnt/secure/srv/hddmedia/anime', jobRunning=false, translatePhase=false, currentMode='translate', evtSource=null, selectedTrack=null;
+let selected=[], currentPath='/mnt/secure/srv/hddmedia/anime', jobRunning=false, translatePhase=false, currentMode='translate', evtSource=null, selectedTrack=null, extractStep='tracks';
 
 // === Utilities ===
 function toast(msg,ok=true){const el=document.getElementById('toast');el.textContent=msg;el.style.borderColor=ok?'var(--green)':'var(--red)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3500);}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function clearAll(){
-  selected=[];selectedTrack=null;
+  selected=[];selectedTrack=null;extractStep='tracks';
   updateQueue();
   document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
   document.getElementById('style-section').style.display='none';
   document.getElementById('style-list').innerHTML='';
   document.getElementById('translate-styles').style.display='none';
+  if(currentMode==='extract'){document.getElementById('analyze-btn').textContent='Probe Tracks';}
   navigate();
   toast('Cleared');
 }
@@ -34,16 +35,25 @@ function showTab(name){
 
 // === Mode switching ===
 function switchMode(mode){
-  currentMode=mode;selected=[];selectedTrack=null;updateQueue();
+  currentMode=mode;selected=[];selectedTrack=null;extractStep='tracks';updateQueue();
   document.getElementById('file-label').textContent=mode==='extract'?'Video Files (.mkv)':'Subtitle Files (.srt / .ass)';
-  document.getElementById('analyze-btn').textContent=mode==='extract'?'Probe Tracks':'Analyze';
-  document.getElementById('translate-btn').textContent=mode==='extract'?'Extract':'Translate';
   document.getElementById('delete-btn').style.display=mode==='extract'?'none':'inline-block';
   document.getElementById('queue-panel').style.display=mode==='extract'?'none':'block';
   document.getElementById('extract-panel').style.display=mode==='extract'?'block':'none';
+  document.getElementById('translate-styles').style.display='none';
   document.getElementById('sb-title').textContent=mode==='extract'?'Extract Setup':'Queue';
   document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
   document.getElementById('style-section').style.display='none';
+  // Button labels
+  if(mode==='extract'){
+    document.getElementById('styles-btn').style.display='none';
+    document.getElementById('analyze-btn').textContent='Probe Tracks';
+    document.getElementById('translate-btn').textContent='Extract';
+  } else {
+    document.getElementById('styles-btn').style.display='none';
+    document.getElementById('analyze-btn').textContent='Analyze';
+    document.getElementById('translate-btn').textContent='Translate';
+  }
   navigate();
 }
 
@@ -90,13 +100,13 @@ function updateQueue(){
   document.getElementById('analyze-btn').disabled=selected.length===0||jobRunning;
   if(!jobRunning)document.getElementById('translate-btn').disabled=true;
   if(currentMode==='translate'){
-    if(!selected.length){el.innerHTML='<div class="empty">No files queued</div>';document.getElementById('translate-styles').style.display='none';return;}
+    if(!selected.length){el.innerHTML='<div class="empty">No files queued</div>';document.getElementById('translate-styles').style.display='none';document.getElementById('styles-btn').style.display='none';return;}
     el.innerHTML=selected.map(p=>{const name=p.split('/').pop();return'<div class="q-item"><span class="q-name" title="'+escHtml(p)+'">'+escHtml(name)+'</span><button class="rm" onclick="removeFile(this)" data-path="'+escHtml(p)+'">x</button></div>';}).join('');
     checkAnalyzeStatus();
-    // Detect styles if any ASS files selected
+    // Show Analyze Styles button if ASS files present
     const hasAss=selected.some(p=>p.toLowerCase().endsWith('.ass'));
-    if(hasAss)detectTranslateStyles();
-    else document.getElementById('translate-styles').style.display='none';
+    document.getElementById('styles-btn').style.display=hasAss?'block':'none';
+    document.getElementById('styles-btn').disabled=jobRunning;
   }
 }
 function removeFile(btn){const path=btn.dataset.path;selected=selected.filter(p=>p!==path);updateQueue();navigate();}
@@ -118,21 +128,40 @@ async function detectTranslateStyles(){
   el.innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" checked class="translate-style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
 }
 
+async function runAnalyzeStyles(){
+  setBtnLoading('styles-btn','Detecting...');
+  await detectTranslateStyles();
+  resetBtnLabels();
+  document.getElementById('styles-btn').textContent='Analyze Styles';
+  document.getElementById('styles-btn').disabled=false;
+}
+
 // === Analyze / Probe / Translate / Extract ===
 function setBtnLoading(id,text){document.getElementById(id).disabled=true;document.getElementById(id).textContent=text;}
 function resetBtnLabels(){
-  document.getElementById('analyze-btn').textContent=currentMode==='extract'?'Probe Tracks':'Analyze';
+  if(currentMode==='extract'){
+    document.getElementById('analyze-btn').textContent=extractStep==='tracks'?'Probe Tracks':'Probe Styles';
+  } else {
+    document.getElementById('analyze-btn').textContent='Analyze';
+  }
   document.getElementById('translate-btn').textContent=currentMode==='extract'?'Extract':'Translate';
   document.getElementById('analyze-btn').disabled=selected.length===0||jobRunning;
 }
 
-async function runAnalyze(){
   if(!selected.length)return;
   if(currentMode==='extract'){
-    setBtnLoading('analyze-btn','Probing...');
-    const res=await fetch('/api/probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
-    if(res.ok){setJobRunning(true);showTab('log');startSSE();}
-    else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);resetBtnLabels();}
+    if(extractStep==='tracks'){
+      setBtnLoading('analyze-btn','Probing...');
+      const res=await fetch('/api/probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
+      if(res.ok){setJobRunning(true);showTab('log');startSSE();}
+      else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);resetBtnLabels();}
+    } else {
+      // Probe styles for selected track
+      setBtnLoading('analyze-btn','Loading styles...');
+      await loadProbeStyles();
+      document.getElementById('analyze-btn').textContent='Probe Styles';
+      document.getElementById('analyze-btn').disabled=false;
+    }
   } else {
     setBtnLoading('analyze-btn','Analyzing...');
     const keepStyles=Array.from(document.querySelectorAll('.translate-style-cb:checked')).map(cb=>cb.value);
@@ -222,18 +251,15 @@ function startSSE(){
 
 // === Extract: load probe results (tracks + styles) ===
 async function loadProbeResults(){
-  // Load tracks from job log (parsed from log lines)
   const status=await fetch('/api/job-status').then(r=>r.json());
   const trackLines=(status.log||[]).filter(l=>l.includes('Track '));
   const trackEl=document.getElementById('track-list');
   if(!trackLines.length){trackEl.innerHTML='<div class="empty" style="font-size:12px">No tracks found</div>';return;}
-  // Parse track info from log
   const tracks=[];
   trackLines.forEach(l=>{
     const m=l.match(/Track (\d+): \[([^\]]*)\] \(([^)]*)\)(.*)/);
     if(m)tracks.push({index:parseInt(m[1]),lang:m[2],codec:m[3],title:m[4].replace(/^\s*"?|"?\s*$/g,'')});
   });
-  // Deduplicate by index
   const unique=[];const seen=new Set();
   tracks.forEach(t=>{const k=t.index+'-'+t.lang+'-'+t.codec+'-'+t.title;if(!seen.has(k)){seen.add(k);unique.push(t);}});
   trackEl.innerHTML=unique.map(t=>{
@@ -244,6 +270,24 @@ async function loadProbeResults(){
     const label=isImage?'<span style="color:var(--red)">image - cannot extract</span>':'<span>('+sc+')</span>';
     return'<div class="'+cls+'" '+onclick+'><strong>'+t.index+'</strong> <span style="color:var(--muted)">['+escHtml(t.lang)+']</span> '+label+' '+escHtml(t.title)+'</div>';
   }).join('');
+  // Auto-select track 0 if it exists and is not image
+  if(unique.length>0){
+    const first=unique.find(t=>simplifyCodec(t.codec)!=='image');
+    if(first){
+      selectedTrack=first.index;
+      const firstEl=trackEl.querySelector('.track-item:not(.disabled)');
+      if(firstEl)firstEl.classList.add('sel');
+      if(first.codec==='ass'||first.codec==='ssa'){
+        document.getElementById('style-section').style.display='block';
+        document.getElementById('style-list').innerHTML='<div class="empty" style="font-size:12px">Click Probe Styles to load</div>';
+      }
+    }
+  }
+  // Update button: show Probe Styles in extract mode
+  extractStep='styles';
+  document.getElementById('analyze-btn').textContent='Probe Styles';
+  document.getElementById('analyze-btn').disabled=false;
+  checkAnalyzeStatus();
 }
 
 function selectTrack(idx,el,codec){
@@ -252,10 +296,9 @@ function selectTrack(idx,el,codec){
   el.classList.add('sel');
   if(codec==='ass'||codec==='ssa'){
     document.getElementById('style-section').style.display='block';
-    loadProbeStyles();
+    document.getElementById('style-list').innerHTML='<div class="empty" style="font-size:12px">Click Probe Styles to load</div>';
   } else {
     document.getElementById('style-section').style.display='none';
-    document.getElementById('style-list').innerHTML='<div class="empty" style="font-size:12px">SRT tracks have no styles</div>';
   }
   checkAnalyzeStatus();
 }
