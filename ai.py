@@ -17,12 +17,22 @@ from blob import estimate_output_tokens
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-_PROMPT_HEADER = (
+_DEFAULT_PROMPT_HEADER = (
     "You are a professional English to Arabic subtitle translator.\n"
     "Translate each value in the following JSON object to Arabic.\n"
     "Return a valid JSON object with the EXACT same keys and ONLY Arabic values.\n"
     "Place punctuation at the END of each Arabic line. No extra keys or explanation.\n\n"
 )
+
+
+def _build_prompt(chunk: dict, show_name: str = "") -> str:
+    """Build the translation prompt using the configurable template."""
+    template = cfg.get("PROMPT_TEMPLATE", "")
+    if template and "{json_blob}" in template:
+        name = show_name or "Unknown"
+        return template.replace("{show_name}", name).replace("{json_blob}", json.dumps(chunk, ensure_ascii=False))
+    # Fallback to basic prompt if template is missing/broken
+    return _DEFAULT_PROMPT_HEADER + json.dumps(chunk, ensure_ascii=False)
 
 
 def _generation_config() -> dict:
@@ -34,12 +44,13 @@ def _generation_config() -> dict:
 
 
 async def translate_chunk(client: httpx.AsyncClient, chunk: dict, chunk_num: int,
-                          total: int, api_keys: list, key_idx_ref: list) -> dict | None:
+                          total: int, api_keys: list, key_idx_ref: list,
+                          show_name: str = "") -> dict | None:
     """Translate one chunk. Returns {key: arabic} or None on cancel/total failure."""
     est = estimate_output_tokens(chunk)
     log.info(f"CHUNK {chunk_num}/{total} - {len(chunk)} lines - est. ~{est} output tokens")
 
-    prompt = _PROMPT_HEADER + json.dumps(chunk, ensure_ascii=False)
+    prompt = _build_prompt(chunk, show_name)
     gen_cfg = _generation_config()
 
     retry_attempts = cfg["RETRY_ATTEMPTS"]

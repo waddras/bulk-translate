@@ -42,6 +42,7 @@ DEFAULT_SETTINGS = {
     "FONT_MARGIN_L":            20,
     "FONT_MARGIN_R":            20,
     "FONT_MARGIN_V":            30,
+    "PROMPT_TEMPLATE":          "You are a professional English to Arabic subtitle translator.\n\nContext: These are subtitles from the anime \"{show_name}\". The lines below form a continuous conversation in sequential order — use the full context to produce natural, flowing Arabic dialogue.\n\nRules:\n- Translate to Modern Standard Arabic (MSA), but keep dialogue natural and conversational\n- These lines are a continuous scene — maintain consistency in tone, character voice, and references across all lines\n- Preserve humor, sarcasm, and emotional tone\n- Do NOT translate character names or place names\n- Keep Japanese honorifics (-kun, -san, -chan, -senpai) as-is\n- Sound effects in brackets like [laughing] or *sighs* translate naturally (e.g. [يضحك] or *تنهد*)\n- Keep translations concise — must be readable as subtitles\n\nTranslate each value in the following JSON object.\nReturn a valid JSON object with the EXACT same keys and ONLY Arabic values.\nNo extra keys, no explanation, no markdown.\n\n{json_blob}",
     "MODEL_POOL": [
         {"id": "gemini-3.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 1},
         {"id": "gemini-2.5-flash",      "rpd": 20,  "rpm": 5,  "priority": 2},

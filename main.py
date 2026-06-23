@@ -53,6 +53,7 @@ class SettingsRequest(BaseModel):
     EMBED_FONT: bool
     PRESERVE_ASS_POSITIONS: bool
     PRESERVE_TAGS: str
+    PROMPT_TEMPLATE: str
     CONVERT_TO_SRT_AFTER_EXTRACT: bool
     FONT_NAME: str
     FONT_SIZE: int
@@ -188,6 +189,14 @@ async def api_analyze(payload: TranslationRequest, background_tasks: BackgroundT
         raise HTTPException(400, "No files provided")
     background_tasks.add_task(job.run_analyze, payload.files, payload.keep_styles or None)
     return {"ok": True, "queued": len(payload.files)}
+
+
+@app.post("/api/set-show-name")
+async def api_set_show_name(payload: dict):
+    """Override the auto-detected show name."""
+    name = payload.get("name", "")
+    job.set_show_name(name)
+    return {"ok": True, "name": name}
 
 
 @app.post("/api/translate")

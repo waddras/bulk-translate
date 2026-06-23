@@ -65,6 +65,7 @@
       <div class="field"><label>Embed Font (ASS)</label><select id="s-embed"><option value="true">Yes</option><option value="false">No</option></select></div>
       <div class="field"><label>Preserve ASS Positions</label><select id="s-preserve"><option value="true">Yes</option><option value="false">No</option></select></div>
       <div class="field"><label>Preserve Tags (comma-separated, end with ;)</label><input id="s-tags" type="text" placeholder="pos, an, move, fad, fade;"></div>
+      <div class="field" style="grid-column:span 2"><label>Prompt Template (use {show_name} and {json_blob})</label><textarea id="s-prompt" style="width:100%;min-height:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-family:var(--mono);font-size:12px;resize:vertical"></textarea></div>
       <div class="field"><label>Font Name</label><input id="s-fontname" type="text"></div>
       <div class="field"><label>Font Size</label><input id="s-fontsize" type="number" min="1"></div>
       <div class="field"><label>Font Outline</label><input id="s-outline" type="number" min="0"></div>
@@ -100,6 +101,10 @@
     <div id="translate-styles" style="display:none;overflow-y:auto;padding:12px;border-top:1px solid var(--border);max-height:40vh">
       <div class="sec-label" style="margin-bottom:8px">Keep Styles</div>
       <div id="translate-style-list"></div>
+    </div>
+    <div id="show-name-section" style="display:none;padding:12px;border-top:1px solid var(--border);flex-shrink:0">
+      <div class="sec-label" style="margin-bottom:6px">Show Name</div>
+      <input id="show-name-input" type="text" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px" placeholder="Auto-detected from filenames">
     </div>
     <div id="extract-panel" class="extract-panel" style="display:none">
       <div class="sec-label" style="margin-bottom:8px">1. Select Track</div>

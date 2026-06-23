@@ -26,6 +26,7 @@ _analyze_state = {
     "chunks": [],
     "file_paths": [],
     "settings_hash": None,
+    "show_name": "",
 }
 
 
@@ -44,7 +45,41 @@ def get_analyze_summary() -> dict:
         "ready": is_analyze_ready(),
         "file_count": len(_analyze_state["files"]),
         "chunk_count": len(_analyze_state["chunks"]),
+        "show_name": _analyze_state.get("show_name", ""),
     }
+
+
+def set_show_name(name: str):
+    """Override the auto-detected show name."""
+    _analyze_state["show_name"] = name
+
+
+def _detect_show_name(files: list) -> str:
+    """Auto-detect show name from filenames (common prefix before ' - S' or ' - E')."""
+    import re
+    names = [f.stem for f in files]
+    if not names:
+        return ""
+    # Try to find common prefix before season/episode marker
+    patterns = [r'^(.+?)\s*-\s*S\d', r'^(.+?)\s*-\s*E\d', r'^(.+?)\s+S\d']
+    for pattern in patterns:
+        matches = []
+        for name in names:
+            m = re.match(pattern, name)
+            if m:
+                matches.append(m.group(1).strip())
+        if matches:
+            # Return the most common match
+            from collections import Counter
+            return Counter(matches).most_common(1)[0][0]
+    # Fallback: longest common prefix
+    if len(names) == 1:
+        return names[0].split(' - ')[0].strip() if ' - ' in names[0] else names[0]
+    prefix = names[0]
+    for name in names[1:]:
+        while not name.startswith(prefix) and prefix:
+            prefix = prefix[:-1]
+    return prefix.strip().rstrip('-').strip()
 
 
 def invalidate_analyze():
@@ -109,7 +144,9 @@ async def run_analyze(file_paths: list, keep_styles: list = None) -> None:
         _analyze_state["chunks"] = chunks
         _analyze_state["file_paths"] = file_paths
         _analyze_state["settings_hash"] = _settings_hash()
+        _analyze_state["show_name"] = _detect_show_name(files)
 
+        jlog(f"Detected show: {_analyze_state['show_name']}")
         jlog(SEP)
         jlog("ANALYZE COMPLETE - Ready to translate. Click Translate to proceed.")
         logger.set_done()
@@ -134,9 +171,11 @@ async def run_translate() -> None:
         files = _analyze_state["files"]
         meta = _analyze_state["meta"]
         chunks = _analyze_state["chunks"]
+        show_name = _analyze_state.get("show_name", "")
 
         jlog(SEP)
         jlog(f"TRANSLATE - {len(files)} files, {len(chunks)} chunks")
+        jlog(f"Show: {show_name}")
 
         # Check API keys
         api_keys = db.get_active_keys()
@@ -160,7 +199,7 @@ async def run_translate() -> None:
                     break
 
                 result = await ai.translate_chunk(
-                    client, chunk, i, len(chunks), api_keys, key_idx_ref
+                    client, chunk, i, len(chunks), api_keys, key_idx_ref, show_name
                 )
                 if result:
                     translated_unique.update(result)
@@ -194,7 +233,7 @@ async def run_translate() -> None:
                     retry_key_idx = [0]  # fresh start from priority 1
                     retry_result = await ai.translate_chunk(
                         client, retry_chunk, len(chunks) + 1, len(chunks) + 1,
-                        api_keys, retry_key_idx
+                        api_keys, retry_key_idx, show_name
                     )
                     if retry_result:
                         translated_unique.update(retry_result)

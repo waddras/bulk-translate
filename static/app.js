@@ -11,6 +11,7 @@ function clearAll(){
   document.getElementById('style-section').style.display='none';
   document.getElementById('style-list').innerHTML='';
   document.getElementById('translate-styles').style.display='none';
+  document.getElementById('show-name-section').style.display='none';
   if(currentMode==='extract'){document.getElementById('analyze-btn').textContent='Probe Tracks';}
   navigate();
   toast('Cleared');
@@ -41,6 +42,7 @@ function switchMode(mode){
   document.getElementById('queue-panel').style.display=mode==='extract'?'none':'block';
   document.getElementById('extract-panel').style.display=mode==='extract'?'block':'none';
   document.getElementById('translate-styles').style.display='none';
+  document.getElementById('show-name-section').style.display='none';
   document.getElementById('sb-title').textContent=mode==='extract'?'Extract Setup':'Queue';
   document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
   document.getElementById('style-section').style.display='none';
@@ -116,6 +118,10 @@ async function checkAnalyzeStatus(){
   if(currentMode==='extract'){document.getElementById('translate-btn').disabled=selectedTrack===null||selected.length===0||jobRunning||translatePhase;return;}
   const res=await fetch('/api/analyze-status').then(r=>r.json());
   document.getElementById('translate-btn').disabled=!res.ready||jobRunning||translatePhase;
+  if(res.ready&&res.show_name){
+    document.getElementById('show-name-section').style.display='block';
+    document.getElementById('show-name-input').value=res.show_name;
+  }
 }
 
 async function detectTranslateStyles(){
@@ -186,6 +192,9 @@ async function runTranslate(){
     if(res.ok){setJobRunning(true);showTab('log');startSSE();}
     else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);translatePhase=false;resetBtnLabels();}
   } else {
+    // Send show name override if user edited it
+    const showName=document.getElementById('show-name-input').value.trim();
+    if(showName)await fetch('/api/set-show-name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:showName})});
     setBtnLoading('translate-btn','Translating...');
     translatePhase=true;
     const res=await fetch('/api/translate',{method:'POST'});
@@ -369,6 +378,7 @@ async function loadSettings(){
   document.getElementById('s-embed').value=String(s.EMBED_FONT!==false);
   document.getElementById('s-preserve').value=String(s.PRESERVE_ASS_POSITIONS===true);
   document.getElementById('s-tags').value=s.PRESERVE_TAGS||'pos, an, move, fad, fade;';
+  document.getElementById('s-prompt').value=s.PROMPT_TEMPLATE||'';
   document.getElementById('s-fontname').value=s.FONT_NAME||'Amiri';
   document.getElementById('s-fontsize').value=s.FONT_SIZE||40;
   document.getElementById('s-outline').value=s.FONT_OUTLINE!=null?s.FONT_OUTLINE:1;
@@ -389,7 +399,7 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),OUTPUT_FORMAT:document.getElementById('s-format').value,CONVERT_TO_SRT_AFTER_EXTRACT:document.getElementById('s-convert').value==='true',FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',PRESERVE_TAGS:document.getElementById('s-tags').value,FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
+  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),OUTPUT_FORMAT:document.getElementById('s-format').value,CONVERT_TO_SRT_AFTER_EXTRACT:document.getElementById('s-convert').value==='true',FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',PRESERVE_TAGS:document.getElementById('s-tags').value,PROMPT_TEMPLATE:document.getElementById('s-prompt').value,FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(res.ok)toast('Settings saved');else{const e=await res.json();toast(e.detail||'Save failed',false);}
 }
