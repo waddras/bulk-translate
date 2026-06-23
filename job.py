@@ -24,6 +24,7 @@ _analyze_state = {
     "files": [],
     "meta": {},
     "chunks": [],
+    "payload": {},
     "file_paths": [],
     "settings_hash": None,
     "show_name": "",
@@ -142,6 +143,7 @@ async def run_analyze(file_paths: list, keep_styles: list = None) -> None:
         _analyze_state["files"] = files
         _analyze_state["meta"] = meta
         _analyze_state["chunks"] = chunks
+        _analyze_state["payload"] = payload
         _analyze_state["file_paths"] = file_paths
         _analyze_state["settings_hash"] = _settings_hash()
         _analyze_state["show_name"] = _detect_show_name(files)
@@ -171,10 +173,12 @@ async def run_translate() -> None:
         files = _analyze_state["files"]
         meta = _analyze_state["meta"]
         chunks = _analyze_state["chunks"]
+        payload = _analyze_state.get("payload", {})
         show_name = _analyze_state.get("show_name", "")
+        mode = cfg.get("TRANSLATION_MODE", "chunked")
 
         jlog(SEP)
-        jlog(f"TRANSLATE - {len(files)} files, {len(chunks)} chunks")
+        jlog(f"TRANSLATE - {len(files)} files, {len(chunks)} chunks, mode: {mode}")
         jlog(f"Show: {show_name}")
 
         # Check API keys
@@ -187,70 +191,94 @@ async def run_translate() -> None:
         jlog(f"Active keys: {[k['email'] for k in api_keys]}")
         jlog(f"GEMINI_MAX_OUTPUT_TOKENS={cfg['GEMINI_MAX_OUTPUT_TOKENS'] or 'model-default'}")
 
-        # Phase 3
+        # Phase 3 — dispatch by mode
         jlog(SEP)
         jlog("PHASE 3 - Translating...")
         translated_unique = {}
         key_idx_ref = [0]
-        async with httpx.AsyncClient() as client:
-            for i, chunk in enumerate(chunks, 1):
-                if logger.is_cancelled():
-                    jlog(f"CANCELLED after chunk {i - 1}/{len(chunks)}")
-                    break
 
-                result = await ai.translate_chunk(
-                    client, chunk, i, len(chunks), api_keys, key_idx_ref, show_name
+        if mode == "multi_turn":
+            jlog(f"Mode: Multi-turn conversation ({len(payload)} lines as context)")
+            async with httpx.AsyncClient() as client:
+                translated_unique = await ai.translate_multi_turn(
+                    client, chunks, payload, api_keys, show_name
                 )
-                if result:
-                    translated_unique.update(result)
-                    jlog(f"  Chunk {i}/{len(chunks)} - {len(result)} unique lines translated")
-                else:
-                    jlog(f"  Chunk {i}/{len(chunks)} - FAILED or cancelled")
-                    result = {}
+                for i, chunk in enumerate(chunks, 1):
+                    done = sum(1 for k in chunk if k in translated_unique)
+                    jlog(f"  Chunk {i}/{len(chunks)} - {done}/{len(chunk)} lines")
 
-                # CHECK: verify all sent keys came back
-                sent_keys = set(chunk.keys())
-                returned_keys = set(result.keys()) if result else set()
-                missing_keys = sent_keys - returned_keys
-
-                if not missing_keys:
-                    jlog(f"  Chunk {i}/{len(chunks)} - verification OK, all lines returned")
-                elif i < len(chunks):
-                    # Append missing to next chunk
-                    jlog(f"  Chunk {i}/{len(chunks)} - {len(missing_keys)} lines missing:")
-                    for mk in sorted(missing_keys):
-                        jlog(f"    [{mk}] \"{chunk[mk]}\"")
-                    jlog(f"  -> Appending {len(missing_keys)} missing lines to chunk {i+1}")
-                    for mk in missing_keys:
-                        chunks[i][mk] = chunk[mk]  # chunks is 0-indexed, i is next
-                else:
-                    # Last chunk - do a single retry from priority 1
-                    jlog(f"  Chunk {i}/{len(chunks)} (last) - {len(missing_keys)} lines missing:")
-                    for mk in sorted(missing_keys):
-                        jlog(f"    [{mk}] \"{chunk[mk]}\"")
-                    jlog(f"  -> Sending retry chunk ({len(missing_keys)} lines) from priority 1...")
-                    retry_chunk = {mk: chunk[mk] for mk in missing_keys}
-                    retry_key_idx = [0]  # fresh start from priority 1
-                    retry_result = await ai.translate_chunk(
-                        client, retry_chunk, len(chunks) + 1, len(chunks) + 1,
-                        api_keys, retry_key_idx, show_name
+        elif mode == "full_context":
+            jlog(f"Mode: Full context per chunk ({len(payload)} lines sent each time)")
+            async with httpx.AsyncClient() as client:
+                for i, chunk in enumerate(chunks, 1):
+                    if logger.is_cancelled():
+                        jlog(f"CANCELLED after chunk {i - 1}/{len(chunks)}")
+                        break
+                    result = await ai.translate_full_context(
+                        client, chunk, i, len(chunks), payload, api_keys, key_idx_ref, show_name
                     )
-                    if retry_result:
-                        translated_unique.update(retry_result)
-                        still_missing = missing_keys - set(retry_result.keys())
-                        if still_missing:
-                            jlog(f"  Retry recovered {len(retry_result)} lines, "
-                                 f"{len(still_missing)} still untranslated (keeping original):")
-                            for sm in sorted(still_missing):
-                                jlog(f"    [{sm}] \"{chunk[sm]}\"")
-                        else:
-                            jlog(f"  Retry recovered all {len(retry_result)} missing lines")
+                    if result:
+                        translated_unique.update(result)
+                        jlog(f"  Chunk {i}/{len(chunks)} - {len(result)} unique lines translated")
                     else:
-                        jlog(f"  Retry FAILED - {len(missing_keys)} lines will keep original text:"
-                        )
+                        jlog(f"  Chunk {i}/{len(chunks)} - FAILED or cancelled")
+
+        else:  # chunked (default)
+            async with httpx.AsyncClient() as client:
+                for i, chunk in enumerate(chunks, 1):
+                    if logger.is_cancelled():
+                        jlog(f"CANCELLED after chunk {i - 1}/{len(chunks)}")
+                        break
+
+                    result = await ai.translate_chunk(
+                        client, chunk, i, len(chunks), api_keys, key_idx_ref, show_name
+                    )
+                    if result:
+                        translated_unique.update(result)
+                        jlog(f"  Chunk {i}/{len(chunks)} - {len(result)} unique lines translated")
+                    else:
+                        jlog(f"  Chunk {i}/{len(chunks)} - FAILED or cancelled")
+                        result = {}
+
+                    # CHECK: verify all sent keys came back
+                    sent_keys = set(chunk.keys())
+                    returned_keys = set(result.keys()) if result else set()
+                    missing_keys = sent_keys - returned_keys
+
+                    if not missing_keys:
+                        jlog(f"  Chunk {i}/{len(chunks)} - verification OK, all lines returned")
+                    elif i < len(chunks):
+                        jlog(f"  Chunk {i}/{len(chunks)} - {len(missing_keys)} lines missing:")
                         for mk in sorted(missing_keys):
                             jlog(f"    [{mk}] \"{chunk[mk]}\"")
-
+                        jlog(f"  -> Appending {len(missing_keys)} missing lines to chunk {i+1}")
+                        for mk in missing_keys:
+                            chunks[i][mk] = chunk[mk]
+                    else:
+                        jlog(f"  Chunk {i}/{len(chunks)} (last) - {len(missing_keys)} lines missing:")
+                        for mk in sorted(missing_keys):
+                            jlog(f"    [{mk}] \"{chunk[mk]}\"")
+                        jlog(f"  -> Sending retry chunk ({len(missing_keys)} lines) from priority 1...")
+                        retry_chunk = {mk: chunk[mk] for mk in missing_keys}
+                        retry_key_idx = [0]
+                        retry_result = await ai.translate_chunk(
+                            client, retry_chunk, len(chunks) + 1, len(chunks) + 1,
+                            api_keys, retry_key_idx, show_name
+                        )
+                        if retry_result:
+                            translated_unique.update(retry_result)
+                            still_missing = missing_keys - set(retry_result.keys())
+                            if still_missing:
+                                jlog(f"  Retry recovered {len(retry_result)} lines, "
+                                     f"{len(still_missing)} still untranslated (keeping original):")
+                                for sm in sorted(still_missing):
+                                    jlog(f"    [{sm}] \"{chunk[sm]}\"")
+                            else:
+                                jlog(f"  Retry recovered all {len(retry_result)} missing lines")
+                        else:
+                            jlog(f"  Retry FAILED - {len(missing_keys)} lines will keep original text:")
+                            for mk in sorted(missing_keys):
+                                jlog(f"    [{mk}] \"{chunk[mk]}\"")
         cancelled = logger.is_cancelled()
         if cancelled:
             logger.mark_cancelled()

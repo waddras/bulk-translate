@@ -106,3 +106,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .clear-btn:hover{background:#3a3a1a}
 .dir-item.go-up{background:#1a1d27;border-color:var(--accent);color:var(--accent);font-weight:600}
 .dir-item.go-up:hover{background:#1e2035}
+
+
+.go-up-btn{background:var(--surface);border:1px solid var(--accent);color:var(--accent);padding:9px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
+.go-up-btn:hover{background:#1e2035}
+.accordion{display:flex;flex-direction:column;gap:8px}
+.acc-section{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.acc-header{padding:12px 14px;background:var(--surface);cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);display:flex;align-items:center;justify-content:space-between;transition:all .15s}
+.acc-header:hover{color:var(--text)}
+.acc-header::after{content:'+';font-size:16px;color:var(--muted)}
+.acc-section.open .acc-header::after{content:'-'}
+.acc-body{display:none;padding:14px;border-top:1px solid var(--border)}
+.acc-section.open .acc-body{display:block}

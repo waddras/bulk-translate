@@ -26,8 +26,8 @@
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="translate" checked onchange="switchMode('translate')"> Translate</label>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="extract" onchange="switchMode('extract')"> Extract Subs</label>
         </div>
-        <div class="path-bar"><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
-        <div class="toolbar" id="file-toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" id="delete-btn" onclick="deleteSelected()">Delete Selected</button></div>
+        <div class="path-bar"><button class="go-up-btn" onclick="goUp()">Up</button><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
+        <div class="toolbar" id="file-toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" id="delete-btn" onclick="deleteSelected()">Delete Selected</button><input id="search-input" type="text" placeholder="Search..." oninput="filterFiles()" style="margin-left:auto;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:5px;font-size:12px;width:160px"></div>
         <div class="sec-label" id="file-label">Subtitle Files (.srt / .ass)</div>
       </div>
       <div style="flex:1;overflow-y:auto">
@@ -51,35 +51,68 @@
   </div>
 
   <div id="tab-settings" class="panel">
-    <div class="sec-label" style="margin-bottom:12px">Translation Parameters</div>
-    <div class="settings-grid">
-      <div class="field"><label>NUM_CHUNKS (split blob into N)</label><input id="s-numchunks" type="number" min="1"></div>
-      <div class="field"><label>GEMINI_MAX_OUTPUT (0=default)</label><input id="s-gmaxout" type="number"></div>
-      <div class="field"><label>OOS_THRESHOLD</label><input id="s-oos" type="number"></div>
-      <div class="field"><label>RETRY_ATTEMPTS</label><input id="s-retry" type="number"></div>
-      <div class="field"><label>RETRY_COOLDOWN (sec)</label><input id="s-cool" type="number"></div>
-      <div class="field"><label>MAX_BLOB_LINES</label><input id="s-maxblob" type="number"></div>
-      <div class="field"><label>Output Format</label><select id="s-format"><option value="ass">ASS</option><option value="srt">SRT</option></select></div>
-      <div class="field"><label>Convert ASS to SRT after extract</label><select id="s-convert"><option value="false">No</option><option value="true">Yes</option></select></div>
-      <div class="field"><label>File Conflict</label><select id="s-conflict"><option value="overwrite">Overwrite</option><option value="rename">Rename</option></select></div>
-      <div class="field"><label>Embed Font (ASS)</label><select id="s-embed"><option value="true">Yes</option><option value="false">No</option></select></div>
-      <div class="field"><label>Preserve ASS Positions</label><select id="s-preserve"><option value="true">Yes</option><option value="false">No</option></select></div>
-      <div class="field"><label>Preserve Tags (comma-separated, end with ;)</label><input id="s-tags" type="text" placeholder="pos, an, move, fad, fade;"></div>
-      <div class="field" style="grid-column:span 2"><label>Prompt Template (use {show_name} and {json_blob})</label><textarea id="s-prompt" style="width:100%;min-height:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-family:var(--mono);font-size:12px;resize:vertical"></textarea></div>
-      <div class="field"><label>Font Name</label><input id="s-fontname" type="text"></div>
-      <div class="field"><label>Font Size</label><input id="s-fontsize" type="number" min="1"></div>
-      <div class="field"><label>Font Outline</label><input id="s-outline" type="number" min="0"></div>
-      <div class="field"><label>Font Shadow</label><input id="s-shadow" type="number" min="0"></div>
-      <div class="field"><label>Font Alignment (1-9)</label><input id="s-align" type="number" min="1" max="9"></div>
-      <div class="field"><label>Margin Left</label><input id="s-ml" type="number" min="0"></div>
-      <div class="field"><label>Margin Right</label><input id="s-mr" type="number" min="0"></div>
-      <div class="field"><label>Margin Vertical</label><input id="s-mv" type="number" min="0"></div>
+    <div class="accordion">
+      <div class="acc-section open">
+        <div class="acc-header" onclick="toggleAcc(this)">Translation</div>
+        <div class="acc-body">
+          <div class="settings-grid">
+            <div class="field"><label>Translation Mode</label><select id="s-mode"><option value="chunked">Chunked (default)</option><option value="multi_turn">Multi-turn conversation</option><option value="full_context">Full context per chunk</option></select></div>
+            <div class="field"><label>NUM_CHUNKS</label><input id="s-numchunks" type="number" min="1"></div>
+            <div class="field"><label>GEMINI_MAX_OUTPUT (0=default)</label><input id="s-gmaxout" type="number"></div>
+            <div class="field"><label>MAX_BLOB_LINES</label><input id="s-maxblob" type="number"></div>
+          </div>
+          <div class="field" style="margin-top:10px"><label>Prompt Template ({show_name} and {json_blob})</label><textarea id="s-prompt" style="width:100%;min-height:120px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-family:var(--mono);font-size:12px;resize:vertical"></textarea></div>
+        </div>
+      </div>
+      <div class="acc-section open">
+        <div class="acc-header" onclick="toggleAcc(this)">Output</div>
+        <div class="acc-body">
+          <div class="settings-grid">
+            <div class="field"><label>Output Format</label><select id="s-format"><option value="ass">ASS</option><option value="srt">SRT</option></select></div>
+            <div class="field"><label>Embed Font (ASS)</label><select id="s-embed"><option value="true">Yes</option><option value="false">No</option></select></div>
+            <div class="field"><label>File Conflict</label><select id="s-conflict"><option value="overwrite">Overwrite</option><option value="rename">Rename</option></select></div>
+            <div class="field"><label>Convert ASS to SRT after extract</label><select id="s-convert"><option value="false">No</option><option value="true">Yes</option></select></div>
+          </div>
+        </div>
+      </div>
+      <div class="acc-section">
+        <div class="acc-header" onclick="toggleAcc(this)">ASS Styling</div>
+        <div class="acc-body">
+          <div class="settings-grid">
+            <div class="field"><label>Font Name</label><input id="s-fontname" type="text"></div>
+            <div class="field"><label>Font Size</label><input id="s-fontsize" type="number" min="1"></div>
+            <div class="field"><label>Outline</label><input id="s-outline" type="number" min="0"></div>
+            <div class="field"><label>Shadow</label><input id="s-shadow" type="number" min="0"></div>
+            <div class="field"><label>Alignment (1-9)</label><input id="s-align" type="number" min="1" max="9"></div>
+            <div class="field"><label>Margin Left</label><input id="s-ml" type="number" min="0"></div>
+            <div class="field"><label>Margin Right</label><input id="s-mr" type="number" min="0"></div>
+            <div class="field"><label>Margin Vertical</label><input id="s-mv" type="number" min="0"></div>
+            <div class="field"><label>Preserve ASS Positions</label><select id="s-preserve"><option value="true">Yes</option><option value="false">No</option></select></div>
+            <div class="field"><label>Preserve Tags (comma, end ;)</label><input id="s-tags" type="text" placeholder="pos, an, move, fad, fade;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="acc-section">
+        <div class="acc-header" onclick="toggleAcc(this)">Retry / Quota</div>
+        <div class="acc-body">
+          <div class="settings-grid">
+            <div class="field"><label>OOS_THRESHOLD</label><input id="s-oos" type="number"></div>
+            <div class="field"><label>RETRY_ATTEMPTS</label><input id="s-retry" type="number"></div>
+            <div class="field"><label>RETRY_COOLDOWN (sec)</label><input id="s-cool" type="number"></div>
+          </div>
+        </div>
+      </div>
+      <div class="acc-section">
+        <div class="acc-header" onclick="toggleAcc(this)">Model Pool</div>
+        <div class="acc-body">
+          <div class="model-header"><span style="width:40px">Pri</span><span style="flex:2">Model ID</span><span style="width:55px">RPD</span><span style="width:55px">RPM</span><span style="width:30px"></span></div>
+          <div id="model-pool-list"></div>
+          <div class="pri-err" id="pri-err">Duplicate priority numbers. Each must be unique.</div>
+          <div style="display:flex;gap:10px;margin-top:10px"><button class="btn-muted" onclick="addModelRow()">+ Add Model</button></div>
+        </div>
+      </div>
     </div>
-    <div class="sec-label" style="margin-bottom:8px">Model Pool</div>
-    <div class="model-header"><span style="width:40px">Pri</span><span style="flex:2">Model ID</span><span style="width:55px">RPD</span><span style="width:55px">RPM</span><span style="width:30px"></span></div>
-    <div id="model-pool-list"></div>
-    <div class="pri-err" id="pri-err">Duplicate priority numbers. Each must be unique.</div>
-    <div style="display:flex;gap:10px;margin-top:10px"><button class="btn-muted" onclick="addModelRow()">+ Add Model</button><button class="btn-save" id="save-btn" onclick="saveSettings()">Save Settings</button></div>
+    <button class="btn-save" id="save-btn" onclick="saveSettings()" style="margin-top:16px">Save Settings</button>
   </div>
 
   <div id="tab-log" class="panel">

@@ -13,9 +13,22 @@ function clearAll(){
   document.getElementById('translate-styles').style.display='none';
   document.getElementById('show-name-section').style.display='none';
   if(currentMode==='extract'){document.getElementById('analyze-btn').textContent='Probe Tracks';}
+  document.getElementById('search-input').value='';
   navigate();
   toast('Cleared');
 }
+function goUp(){
+  const parts=currentPath.replace(/\/$/,'').split('/');
+  if(parts.length>1){parts.pop();navigate(parts.join('/')||'/');}
+}
+function filterFiles(){
+  const q=document.getElementById('search-input').value.toLowerCase();
+  document.querySelectorAll('#file-list .file-item').forEach(el=>{
+    const name=el.querySelector('.file-name').textContent.toLowerCase();
+    el.style.display=name.includes(q)?'':'none';
+  });
+}
+function toggleAcc(header){header.parentElement.classList.toggle('open');}
 function simplifyCodec(codec){
   if(codec==='subrip'||codec==='mov_text')return'srt';
   if(codec==='ass'||codec==='ssa')return'ass';
@@ -67,7 +80,6 @@ async function navigate(path){
   if(!res.ok){toast('Cannot open path',false);return;}
   const data=await res.json();
   const dirEl=document.getElementById('dir-list');dirEl.innerHTML='';
-  if(data.current!==data.parent){const up=document.createElement('div');up.className='dir-item go-up';up.textContent='.. (Go Up)';up.onclick=()=>navigate(data.parent);dirEl.appendChild(up);}
   data.dirs.forEach(d=>{const el=document.createElement('div');el.className='dir-item';el.textContent=d.name;el.onclick=()=>navigate(d.path);dirEl.appendChild(el);});
   const fileEl=document.getElementById('file-list');fileEl.innerHTML='';
   if(!data.files.length){fileEl.innerHTML='<div class="empty">No files here</div>';return;}
@@ -366,6 +378,7 @@ async function deleteKey(id){if(!confirm('Delete key?'))return;await fetch('/api
 // === Settings ===
 async function loadSettings(){
   const s=await fetch('/api/settings').then(r=>r.json());
+  document.getElementById('s-mode').value=s.TRANSLATION_MODE||'chunked';
   document.getElementById('s-numchunks').value=s.NUM_CHUNKS;
   document.getElementById('s-gmaxout').value=s.GEMINI_MAX_OUTPUT_TOKENS;
   document.getElementById('s-oos').value=s.OOS_THRESHOLD;
@@ -399,7 +412,7 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),OUTPUT_FORMAT:document.getElementById('s-format').value,CONVERT_TO_SRT_AFTER_EXTRACT:document.getElementById('s-convert').value==='true',FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',PRESERVE_TAGS:document.getElementById('s-tags').value,PROMPT_TEMPLATE:document.getElementById('s-prompt').value,FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
+  const body={TRANSLATION_MODE:document.getElementById('s-mode').value,NUM_CHUNKS:parseInt(document.getElementById('s-numchunks').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),OUTPUT_FORMAT:document.getElementById('s-format').value,CONVERT_TO_SRT_AFTER_EXTRACT:document.getElementById('s-convert').value==='true',FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',PRESERVE_TAGS:document.getElementById('s-tags').value,PROMPT_TEMPLATE:document.getElementById('s-prompt').value,FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value),MODEL_POOL:getModelPool()};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(res.ok)toast('Settings saved');else{const e=await res.json();toast(e.detail||'Save failed',false);}
 }

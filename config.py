@@ -23,6 +23,7 @@ HISTORY_DIR   = "/opt/bulk-translate/history"
 # ── Defaults ──────────────────────────────────────────────────────────────────
 DEFAULT_SETTINGS = {
     "NUM_CHUNKS":               1,      # split deduped blob into N chunks (1 = single shot)
+    "TRANSLATION_MODE":         "chunked",  # "chunked", "multi_turn", or "full_context"
     "GEMINI_MAX_OUTPUT_TOKENS": 0,      # sent as maxOutputTokens (0 = omit, use model default)
     "OOS_THRESHOLD":            2,      # retry-exhaustions/day before a model is marked OOS
     "RETRY_ATTEMPTS":           5,
