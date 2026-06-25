@@ -279,12 +279,10 @@ function startSSE(){
         if(currentMode==='extract'){
           loadProbeResults();
           loadExtractedStyles();
-          // Show Continue to Translate button if extraction produced files
           if(msg.completed_files&&msg.completed_files.length>0){
             document.getElementById('continue-translate-btn').style.display='inline-block';
           }
         }
-      }
       }
     } else if(msg.type==='end'){
       if(evtSource){evtSource.close();evtSource=null;}
