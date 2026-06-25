@@ -72,14 +72,14 @@ def estimate_output_tokens(chunk: dict) -> int:
 
 
 def split_blob(payload: dict) -> list:
-    """Split the unique payload into NUM_CHUNKS even parts."""
-    num_chunks = max(1, cfg.get("NUM_CHUNKS", 1))
+    """Split the unique payload into equal chunks, each <= MAX_LINES_PER_CHUNK."""
+    max_lines = max(1, cfg.get("MAX_LINES_PER_CHUNK", 1000))
     items = list(payload.items())
     total = len(items)
-    if num_chunks >= total:
-        # More chunks than lines — one line per chunk
-        return [{k: v} for k, v in items]
-    chunk_size = (total + num_chunks - 1) // num_chunks  # ceiling division
+    if total <= max_lines:
+        return [dict(items)]
+    num_chunks = (total + max_lines - 1) // max_lines  # ceil division
+    chunk_size = (total + num_chunks - 1) // num_chunks  # distribute evenly
     chunks = []
     for i in range(0, total, chunk_size):
         chunks.append(dict(items[i:i + chunk_size]))
@@ -99,3 +99,44 @@ def expand_translations(translated_unique: dict, meta: dict) -> dict:
         if arabic is not None:
             out[tag] = arabic
     return out
+
+
+
+def build_retry_with_context(missing_keys: set, full_payload: dict, context_lines: int = 3) -> list:
+    """Build retry chunks for missing keys, including neighboring lines as context.
+
+    Each retry chunk contains the missing lines + surrounding context lines.
+    Returns list of dicts: [{"translate_keys": [...], "context": {all keys+values}}]
+    """
+    all_keys = list(full_payload.keys())
+    key_to_idx = {k: i for i, k in enumerate(all_keys)}
+    max_lines = max(1, cfg.get("MAX_LINES_PER_CHUNK", 1000))
+
+    # For each missing key, gather its context window
+    missing_sorted = sorted(missing_keys, key=lambda k: key_to_idx.get(k, 0))
+
+    # Split missing into batches of max_lines
+    batches = []
+    for i in range(0, len(missing_sorted), max_lines):
+        batch_keys = missing_sorted[i:i + max_lines]
+        batches.append(batch_keys)
+
+    result = []
+    for batch_keys in batches:
+        # Collect context: for each missing key, include neighbors
+        context_set = set()
+        for k in batch_keys:
+            idx = key_to_idx.get(k, 0)
+            for offset in range(-context_lines, context_lines + 1):
+                neighbor_idx = idx + offset
+                if 0 <= neighbor_idx < len(all_keys):
+                    context_set.add(all_keys[neighbor_idx])
+
+        # Build the context dict (includes the missing keys + neighbors)
+        context = {k: full_payload[k] for k in sorted(context_set, key=lambda x: key_to_idx.get(x, 0))}
+        result.append({
+            "translate_keys": batch_keys,
+            "context": context,
+        })
+
+    return result

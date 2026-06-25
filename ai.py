@@ -311,3 +311,95 @@ async def translate_full_context(client: httpx.AsyncClient, chunk: dict, chunk_n
                 else:
                     db.increment_failures(model_id)
                     failed_models.add(model_id)
+
+
+
+# === Retry with context mode ===
+async def translate_retry_with_context(client: httpx.AsyncClient, translate_keys: list,
+                                       context: dict, retry_num: int, total_retries: int,
+                                       api_keys: list, key_idx_ref: list,
+                                       show_name: str = "") -> dict | None:
+    """Translate specific keys with surrounding context for better quality.
+
+    Sends the full context dict but instructs the model to only translate specific keys.
+    """
+    log.info(f"RETRY {retry_num}/{total_retries} - {len(translate_keys)} lines (with {len(context)} context lines)")
+
+    keys_list = ", ".join(translate_keys[:20])
+    if len(translate_keys) > 20:
+        keys_list += f"... ({len(translate_keys)} total)"
+
+    prompt = (
+        f"You are a professional English to Arabic subtitle translator.\n"
+        f"Context: Subtitles from \"{show_name or 'Unknown'}\".\n\n"
+        f"Below is a section of dialogue. Translate ONLY the keys listed below.\n"
+        f"Keys to translate: {json.dumps(translate_keys)}\n\n"
+        f"Return a valid JSON object with ONLY those keys and their Arabic translations.\n"
+        f"Do NOT translate or include any other keys.\n\n"
+        f"Dialogue section:\n"
+        f"{json.dumps(context, ensure_ascii=False)}"
+    )
+
+    gen_cfg = _generation_config()
+    retry_attempts = cfg["RETRY_ATTEMPTS"]
+    retry_cooldown = cfg["RETRY_COOLDOWN"]
+    failed_models = set()
+
+    while True:
+        if is_cancelled():
+            return None
+        model = db.get_available_model(skip=failed_models)
+        if model is None:
+            log.warning(f"RETRY {retry_num} - all models exhausted - sleeping 60s")
+            failed_models.clear()
+            await asyncio.sleep(60)
+            continue
+
+        model_id = model["id"]
+        url = f"{GEMINI_BASE}/{model_id}:generateContent"
+        key_entry = api_keys[key_idx_ref[0] % len(api_keys)]
+        key_idx_ref[0] += 1
+        log.info(f"RETRY {retry_num} - model: {model_id} - key: {key_entry['email']}")
+
+        for attempt in range(1, retry_attempts + 1):
+            if is_cancelled():
+                return None
+            try:
+                response = await client.post(
+                    url,
+                    headers={"x-goog-api-key": key_entry["api_key"]},
+                    json={"contents": [{"parts": [{"text": prompt}]}],
+                          "generationConfig": gen_cfg},
+                    timeout=300.0,
+                )
+                if response.status_code == 404:
+                    db.increment_failures(model_id)
+                    failed_models.add(model_id)
+                    break
+                response.raise_for_status()
+                raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                result = json_repair.loads(raw)
+                # Filter to only the requested keys
+                filtered = {k: v for k, v in result.items() if k in translate_keys}
+                db.increment_usage(model_id)
+                log.info(f"RETRY {retry_num} - SUCCESS ({len(filtered)}/{len(translate_keys)} keys)")
+                return filtered
+            except httpx.HTTPStatusError as e:
+                code = e.response.status_code
+                if code == 404:
+                    db.increment_failures(model_id)
+                    failed_models.add(model_id)
+                    break
+                log.warning(f"RETRY {retry_num} - attempt {attempt} HTTP {code}")
+                if attempt < retry_attempts:
+                    await asyncio.sleep(retry_cooldown)
+                else:
+                    db.increment_failures(model_id)
+                    failed_models.add(model_id)
+            except Exception as e:
+                log.warning(f"RETRY {retry_num} - attempt {attempt} FAILED: {e}")
+                if attempt < retry_attempts:
+                    await asyncio.sleep(retry_cooldown)
+                else:
+                    db.increment_failures(model_id)
+                    failed_models.add(model_id)

@@ -33,7 +33,7 @@ _analyze_state = {
 
 def _settings_hash():
     """Simple hash of settings that affect chunking so we can detect changes."""
-    return f"{cfg['NUM_CHUNKS']}|{cfg['MAX_BLOB_LINES']}"
+    return f"{cfg['MAX_LINES_PER_CHUNK']}|{cfg['MAX_BLOB_LINES']}"
 
 
 def is_analyze_ready() -> bool:
@@ -235,56 +235,15 @@ async def run_translate() -> None:
                     )
                     if result:
                         translated_unique.update(result)
-                        jlog(f"  Chunk {i}/{len(chunks)} - {len(result)} unique lines translated")
+                        jlog(f"  Chunk {i}/{len(chunks)} - {len(result)}/{len(chunk)} lines translated")
                     else:
                         jlog(f"  Chunk {i}/{len(chunks)} - FAILED or cancelled")
-                        result = {}
-
-                    # CHECK: verify all sent keys came back
-                    sent_keys = set(chunk.keys())
-                    returned_keys = set(result.keys()) if result else set()
-                    missing_keys = sent_keys - returned_keys
-
-                    if not missing_keys:
-                        jlog(f"  Chunk {i}/{len(chunks)} - verification OK, all lines returned")
-                    elif i < len(chunks):
-                        jlog(f"  Chunk {i}/{len(chunks)} - {len(missing_keys)} lines missing:")
-                        for mk in sorted(missing_keys):
-                            jlog(f"    [{mk}] \"{chunk[mk]}\"")
-                        jlog(f"  -> Appending {len(missing_keys)} missing lines to chunk {i+1}")
-                        for mk in missing_keys:
-                            chunks[i][mk] = chunk[mk]
-                    else:
-                        jlog(f"  Chunk {i}/{len(chunks)} (last) - {len(missing_keys)} lines missing:")
-                        for mk in sorted(missing_keys):
-                            jlog(f"    [{mk}] \"{chunk[mk]}\"")
-                        jlog(f"  -> Sending retry chunk ({len(missing_keys)} lines) from priority 1...")
-                        retry_chunk = {mk: chunk[mk] for mk in missing_keys}
-                        retry_key_idx = [0]
-                        retry_result = await ai.translate_chunk(
-                            client, retry_chunk, len(chunks) + 1, len(chunks) + 1,
-                            api_keys, retry_key_idx, show_name
-                        )
-                        if retry_result:
-                            translated_unique.update(retry_result)
-                            still_missing = missing_keys - set(retry_result.keys())
-                            if still_missing:
-                                jlog(f"  Retry recovered {len(retry_result)} lines, "
-                                     f"{len(still_missing)} still untranslated (keeping original):")
-                                for sm in sorted(still_missing):
-                                    jlog(f"    [{sm}] \"{chunk[sm]}\"")
-                            else:
-                                jlog(f"  Retry recovered all {len(retry_result)} missing lines")
-                        else:
-                            jlog(f"  Retry FAILED - {len(missing_keys)} lines will keep original text:")
-                            for mk in sorted(missing_keys):
-                                jlog(f"    [{mk}] \"{chunk[mk]}\"")
         cancelled = logger.is_cancelled()
         if cancelled:
             logger.mark_cancelled()
             jlog("Job cancelled - writing any fully translated files...")
 
-        # Global retry: collect all missing keys and retry up to MAX_FAILED_CHUNKS times
+        # Global retry: collect all missing keys and retry with context
         if not cancelled:
             all_payload_keys = set()
             for ch in chunks:
@@ -296,22 +255,25 @@ async def run_translate() -> None:
             while global_missing and retry_num < max_retries and not logger.is_cancelled():
                 retry_num += 1
                 jlog(f"  Global retry {retry_num}/{max_retries} - {len(global_missing)} lines still missing")
-                # Rebuild chunk from payload
-                retry_chunk = {k: payload[k] for k in global_missing if k in payload}
-                if not retry_chunk:
-                    break
-                retry_key_idx = [0]
+
+                # Build retry batches with context
+                retry_batches = blob.build_retry_with_context(global_missing, payload, context_lines=3)
                 async with httpx.AsyncClient() as client:
-                    result = await ai.translate_chunk(
-                        client, retry_chunk, 0, 0, api_keys, retry_key_idx, show_name
-                    )
-                if result:
-                    translated_unique.update(result)
-                    recovered = global_missing & set(result.keys())
-                    global_missing -= recovered
-                    jlog(f"  Retry {retry_num} recovered {len(recovered)} lines, {len(global_missing)} still missing")
-                else:
-                    jlog(f"  Retry {retry_num} FAILED")
+                    for batch in retry_batches:
+                        if logger.is_cancelled():
+                            break
+                        retry_key_idx = [0]
+                        result = await ai.translate_retry_with_context(
+                            client, batch["translate_keys"], batch["context"],
+                            retry_num, max_retries, api_keys, retry_key_idx, show_name
+                        )
+                        if result:
+                            translated_unique.update(result)
+                            recovered = global_missing & set(result.keys())
+                            global_missing -= recovered
+                            jlog(f"    Recovered {len(recovered)} lines, {len(global_missing)} still missing")
+                        else:
+                            jlog(f"    Batch FAILED")
 
             # Store untranslated lines for the Fix Translation feature
             if global_missing:

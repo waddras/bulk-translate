@@ -43,7 +43,7 @@ class AddKeyRequest(BaseModel):
 
 class SettingsRequest(BaseModel):
     TRANSLATION_MODE: str
-    NUM_CHUNKS: int
+    MAX_LINES_PER_CHUNK: int
     GEMINI_MAX_OUTPUT_TOKENS: int
     OOS_THRESHOLD: int
     RETRY_ATTEMPTS: int
