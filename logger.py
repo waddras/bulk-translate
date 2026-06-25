@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
-"""Logging setup + shared job state + job history persistence.
+"""Logging setup + shared job state.
 
-Leaf module (imports only stdlib). The job state dict is mutated IN PLACE and
-only ever accessed through the helpers below, so routes and the background job
-always observe the same live object (no stale references after a reset).
+Leaf module (imports only stdlib for the state management).
+Job history is persisted to SQLite via db.py on completion.
 """
 import asyncio
-import json
 import logging
 from datetime import datetime
-from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("bulk-translate")
-
-HISTORY_DIR = "/opt/bulk-translate/history"
 
 # ── Shared job state ──────────────────────────────────────────────────────────
 _cancel_flag = asyncio.Event()
@@ -26,6 +21,7 @@ _job_status = {
     "cancelled": False,
     "completed_files": [],
     "skipped_files": [],
+    "untranslated": [],
 }
 
 
@@ -40,6 +36,7 @@ def reset_job_status() -> None:
         "cancelled": False,
         "completed_files": [],
         "skipped_files": [],
+        "untranslated": [],
     })
 
 
@@ -59,7 +56,7 @@ def set_error(msg: str) -> None:
 
 def set_done() -> None:
     _job_status["done"] = True
-    save_job_history()
+    _save_to_db()
 
 
 def set_running(value: bool) -> None:
@@ -82,6 +79,11 @@ def set_skipped(files: list) -> None:
     _job_status["skipped_files"] = files
 
 
+def set_untranslated(lines: list) -> None:
+    """Store ordered list of {tag, text} for untranslated lines."""
+    _job_status["untranslated"] = lines
+
+
 # ── Cancellation ──────────────────────────────────────────────────────────────
 def set_cancel() -> None:
     _cancel_flag.set()
@@ -96,57 +98,24 @@ def is_cancelled() -> bool:
 
 
 
-# ── Job history ───────────────────────────────────────────────────────────────
-def save_job_history() -> None:
-    """Persist the current job log to a timestamped JSON file."""
+# ── Job history (saved to SQLite via db.py) ───────────────────────────────────
+def _save_to_db() -> None:
+    """Save current job to the database."""
     try:
-        Path(HISTORY_DIR).mkdir(parents=True, exist_ok=True)
+        import db
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         status_word = "cancelled" if _job_status.get("cancelled") else \
                       "error" if _job_status.get("error") else "ok"
-        filename = f"{ts}_{status_word}.json"
-        data = {
-            "timestamp": ts,
-            "status": status_word,
-            "error": _job_status.get("error"),
-            "completed_files": _job_status.get("completed_files", []),
-            "skipped_files": _job_status.get("skipped_files", []),
-            "log": _job_status.get("log", []),
-        }
-        (Path(HISTORY_DIR) / filename).write_text(json.dumps(data, indent=2), encoding="utf-8")
-        log.info(f"Job history saved: {filename}")
+        job_id = f"{ts}_{status_word}"
+        db.save_job_history(
+            job_id=job_id,
+            status=status_word,
+            error=_job_status.get("error"),
+            completed_files=_job_status.get("completed_files", []),
+            skipped_files=_job_status.get("skipped_files", []),
+            log_lines=_job_status.get("log", []),
+            untranslated=_job_status.get("untranslated", []),
+        )
+        log.info(f"Job saved to DB: {job_id}")
     except Exception as e:
-        log.warning(f"Failed to save job history: {e}")
-
-
-def list_job_history() -> list:
-    """Return list of past job summaries (newest first)."""
-    hdir = Path(HISTORY_DIR)
-    if not hdir.exists():
-        return []
-    files = sorted(hdir.glob("*.json"), reverse=True)
-    result = []
-    for f in files[:50]:  # cap to last 50
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            result.append({
-                "id": f.stem,
-                "timestamp": data.get("timestamp", ""),
-                "status": data.get("status", ""),
-                "completed": len(data.get("completed_files", [])),
-                "skipped": len(data.get("skipped_files", [])),
-            })
-        except Exception:
-            pass
-    return result
-
-
-def get_job_history(job_id: str) -> dict | None:
-    """Load a specific past job's full log."""
-    fpath = Path(HISTORY_DIR) / f"{job_id}.json"
-    if not fpath.exists():
-        return None
-    try:
-        return json.loads(fpath.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+        log.warning(f"Failed to save job to DB: {e}")

@@ -74,6 +74,7 @@ def init_db() -> None:
                 )
             log.info("Seeded default models")
         conn.commit()
+    _init_history_tables()
     log.info("DB initialized")
 
 
@@ -279,4 +280,138 @@ def reset_usage(model_id: str) -> None:
             "UPDATE usage SET requests=0, failures=0, out_of_service=0 WHERE model=? AND day=?",
             (model_id, today),
         )
+        conn.commit()
+
+
+
+# ── Job history ──────────────────────────────────────────────────────────────
+def _init_history_tables():
+    """Create history tables if they don't exist."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS job_history (
+                id              TEXT PRIMARY KEY,
+                timestamp       TEXT NOT NULL,
+                status          TEXT NOT NULL,
+                error           TEXT,
+                completed_files TEXT NOT NULL DEFAULT '[]',
+                skipped_files   TEXT NOT NULL DEFAULT '[]',
+                log             TEXT NOT NULL DEFAULT '[]'
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS untranslated_lines (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id          TEXT NOT NULL,
+                tag             TEXT NOT NULL,
+                original_text   TEXT NOT NULL,
+                translated_text TEXT,
+                status          TEXT NOT NULL DEFAULT 'pending'
+            )
+        """)
+        conn.commit()
+
+
+def save_job_history(job_id: str, status: str, error: str, completed_files: list,
+                     skipped_files: list, log_lines: list, untranslated: list) -> None:
+    """Save a completed job to the database."""
+    import json
+    _init_history_tables()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO job_history (id, timestamp, status, error, completed_files, skipped_files, log)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            job_id,
+            job_id.replace("_", " ", 1),
+            status,
+            error,
+            json.dumps(completed_files),
+            json.dumps(skipped_files),
+            json.dumps(log_lines),
+        ))
+        # Save untranslated lines
+        if untranslated:
+            conn.execute("DELETE FROM untranslated_lines WHERE job_id=?", (job_id,))
+            for item in untranslated:
+                conn.execute(
+                    "INSERT INTO untranslated_lines (job_id, tag, original_text, status) VALUES (?,?,?,?)",
+                    (job_id, item["tag"], item["text"], "pending"),
+                )
+        conn.commit()
+
+
+def list_job_history(limit: int = 50) -> list:
+    """Return list of past jobs (newest first)."""
+    import json
+    _init_history_tables()
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT id, timestamp, status, completed_files, skipped_files FROM job_history ORDER BY id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    result = []
+    for r in rows:
+        completed = json.loads(r[3]) if r[3] else []
+        skipped = json.loads(r[4]) if r[4] else []
+        # Count pending untranslated
+        result.append({
+            "id": r[0],
+            "timestamp": r[1],
+            "status": r[2],
+            "completed": len(completed),
+            "skipped": len(skipped),
+        })
+    return result
+
+
+def get_job_history(job_id: str) -> dict | None:
+    """Load a specific job's full details."""
+    import json
+    _init_history_tables()
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT id, timestamp, status, error, completed_files, skipped_files, log FROM job_history WHERE id=?",
+            (job_id,)
+        ).fetchone()
+    if not row:
+        return None
+    # Get untranslated lines for this job
+    with sqlite3.connect(DB_PATH) as conn:
+        ut_rows = conn.execute(
+            "SELECT tag, original_text, translated_text, status FROM untranslated_lines WHERE job_id=? ORDER BY id",
+            (job_id,)
+        ).fetchall()
+    return {
+        "id": row[0],
+        "timestamp": row[1],
+        "status": row[2],
+        "error": row[3],
+        "completed_files": json.loads(row[4]) if row[4] else [],
+        "skipped_files": json.loads(row[5]) if row[5] else [],
+        "log": json.loads(row[6]) if row[6] else [],
+        "untranslated": [{"tag": r[0], "text": r[1], "translated": r[2], "status": r[3]} for r in ut_rows],
+    }
+
+
+def get_untranslated_for_job(job_id: str) -> list:
+    """Get pending untranslated lines for a job."""
+    _init_history_tables()
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT tag, original_text FROM untranslated_lines WHERE job_id=? AND status='pending' ORDER BY id",
+            (job_id,)
+        ).fetchall()
+    return [{"tag": r[0], "text": r[1]} for r in rows]
+
+
+def mark_lines_translated(job_id: str, translations: dict) -> None:
+    """Mark lines as translated with the provided text. translations = {tag: arabic}"""
+    _init_history_tables()
+    with sqlite3.connect(DB_PATH) as conn:
+        for tag, text in translations.items():
+            conn.execute(
+                "UPDATE untranslated_lines SET translated_text=?, status='fixed' WHERE job_id=? AND tag=?",
+                (text, job_id, tag),
+            )
         conn.commit()

@@ -284,6 +284,43 @@ async def run_translate() -> None:
             logger.mark_cancelled()
             jlog("Job cancelled - writing any fully translated files...")
 
+        # Global retry: collect all missing keys and retry up to MAX_FAILED_CHUNKS times
+        if not cancelled:
+            all_payload_keys = set()
+            for ch in chunks:
+                all_payload_keys.update(ch.keys())
+            global_missing = all_payload_keys - set(translated_unique.keys())
+            max_retries = cfg.get("MAX_FAILED_CHUNKS", 5)
+            retry_num = 0
+
+            while global_missing and retry_num < max_retries and not logger.is_cancelled():
+                retry_num += 1
+                jlog(f"  Global retry {retry_num}/{max_retries} - {len(global_missing)} lines still missing")
+                # Rebuild chunk from payload
+                retry_chunk = {k: payload[k] for k in global_missing if k in payload}
+                if not retry_chunk:
+                    break
+                retry_key_idx = [0]
+                async with httpx.AsyncClient() as client:
+                    result = await ai.translate_chunk(
+                        client, retry_chunk, 0, 0, api_keys, retry_key_idx, show_name
+                    )
+                if result:
+                    translated_unique.update(result)
+                    recovered = global_missing & set(result.keys())
+                    global_missing -= recovered
+                    jlog(f"  Retry {retry_num} recovered {len(recovered)} lines, {len(global_missing)} still missing")
+                else:
+                    jlog(f"  Retry {retry_num} FAILED")
+
+            # Store untranslated lines for the Fix Translation feature
+            if global_missing:
+                untranslated_list = [{"tag": k, "text": payload.get(k, "")} for k in sorted(global_missing)]
+                logger.set_untranslated(untranslated_list)
+                jlog(f"  {len(global_missing)} lines remain untranslated:")
+                for item in untranslated_list:
+                    jlog(f"    {item['text']}")
+
         # Phase 4
         jlog(SEP)
         jlog("PHASE 4 - Reassembling output files...")
@@ -309,6 +346,63 @@ async def run_translate() -> None:
 
     except Exception as e:
         logger.log.error(f"Translate FAILED: {e}")
+        logger.set_error(str(e))
+        logger.set_done()
+    finally:
+        logger.set_running(False)
+
+
+
+# ── Fix: resend untranslated lines to a specific model ────────────────────────
+async def run_fix_resend(untranslated: list, model_id: str) -> None:
+    """Resend untranslated lines to a specific model."""
+    logger.reset_job_status()
+    logger.clear_cancel()
+
+    try:
+        jlog(SEP)
+        jlog(f"FIX RESEND - {len(untranslated)} lines to model: {model_id}")
+
+        api_keys = db.get_active_keys()
+        if not api_keys:
+            if GEMINI_API_KEY_ENV:
+                api_keys = [{"id": 0, "email": "env-key", "api_key": GEMINI_API_KEY_ENV}]
+            else:
+                raise ValueError("No active API keys.")
+
+        chunk = {item["tag"]: item["text"] for item in untranslated}
+        show_name = _analyze_state.get("show_name", "")
+
+        # Force use specific model by creating a fake key_idx
+        key_idx_ref = [0]
+        async with httpx.AsyncClient() as client:
+            result = await ai.translate_chunk(
+                client, chunk, 1, 1, api_keys, key_idx_ref, show_name
+            )
+
+        if result:
+            translated = len(result)
+            still_missing = set(chunk.keys()) - set(result.keys())
+            jlog(f"  Recovered {translated} lines")
+            if still_missing:
+                remaining = [{"tag": k, "text": chunk[k]} for k in sorted(still_missing)]
+                logger.set_untranslated(remaining)
+                jlog(f"  {len(still_missing)} lines still missing:")
+                for item in remaining:
+                    jlog(f"    {item['text']}")
+            else:
+                jlog("  All lines recovered!")
+                logger.set_untranslated([])
+        else:
+            jlog("  FAILED - no translations returned")
+            logger.set_untranslated(untranslated)
+
+        jlog(SEP)
+        jlog("FIX RESEND COMPLETE")
+        logger.set_done()
+
+    except Exception as e:
+        logger.log.error(f"Fix resend FAILED: {e}")
         logger.set_error(str(e))
         logger.set_done()
     finally:

@@ -18,7 +18,6 @@ GEMINI_API_KEY_ENV = os.environ.get("GEMINI_API_KEY", "")
 DB_PATH       = "/opt/bulk-translate/bulk-translate.db"
 BULK_DIR      = "/opt/bulk-translate"
 SETTINGS_PATH = "/opt/bulk-translate/settings.json"
-HISTORY_DIR   = "/opt/bulk-translate/history"
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 DEFAULT_SETTINGS = {
@@ -29,6 +28,7 @@ DEFAULT_SETTINGS = {
     "RETRY_ATTEMPTS":           5,
     "RETRY_COOLDOWN":           10,     # seconds between retries
     "MAX_BLOB_LINES":           50000,  # sanity cap on total cues per job
+    "MAX_FAILED_CHUNKS":        5,      # max retry chunks for untranslated lines before giving up
     "FILE_CONFLICT":            "overwrite",  # "overwrite" or "rename"
     "OUTPUT_FORMAT":            "ass",  # "srt" or "ass"
     "EMBED_FONT":               True,   # embed subsetted font in ASS output

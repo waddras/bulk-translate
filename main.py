@@ -49,6 +49,7 @@ class SettingsRequest(BaseModel):
     RETRY_ATTEMPTS: int
     RETRY_COOLDOWN: int
     MAX_BLOB_LINES: int
+    MAX_FAILED_CHUNKS: int
     FILE_CONFLICT: str
     OUTPUT_FORMAT: str
     EMBED_FONT: bool
@@ -216,6 +217,53 @@ async def api_set_show_name(payload: dict):
     return {"ok": True, "name": name}
 
 
+class FixResendRequest(BaseModel):
+    job_id: str
+    model_id: str
+
+
+class FixManualRequest(BaseModel):
+    job_id: str
+    translations: List[str]
+
+
+@app.post("/api/fix-resend")
+async def api_fix_resend(payload: FixResendRequest, background_tasks: BackgroundTasks):
+    """Resend untranslated lines to a specific model."""
+    if logger.is_running():
+        raise HTTPException(409, "A job is already running")
+    untranslated = db.get_untranslated_for_job(payload.job_id)
+    if not untranslated:
+        # Try current job status
+        status = logger.get_job_status()
+        untranslated = status.get("untranslated", [])
+    if not untranslated:
+        raise HTTPException(400, "No untranslated lines found")
+    background_tasks.add_task(
+        job.run_fix_resend, untranslated, payload.model_id
+    )
+    return {"ok": True, "lines": len(untranslated)}
+
+
+@app.post("/api/fix-manual")
+async def api_fix_manual(payload: FixManualRequest):
+    """Apply manual translations to untranslated lines."""
+    untranslated = db.get_untranslated_for_job(payload.job_id)
+    if not untranslated:
+        status = logger.get_job_status()
+        untranslated = status.get("untranslated", [])
+    if not untranslated:
+        raise HTTPException(400, "No untranslated lines found")
+    if len(payload.translations) != len(untranslated):
+        raise HTTPException(400, f"Expected {len(untranslated)} lines, got {len(payload.translations)}")
+    # Map translations back to tags and save
+    translations = {}
+    for i, item in enumerate(untranslated):
+        translations[item["tag"]] = payload.translations[i]
+    db.mark_lines_translated(payload.job_id, translations)
+    return JSONResponse({"ok": True, "applied": len(translations)})
+
+
 @app.post("/api/translate")
 async def api_translate(background_tasks: BackgroundTasks):
     if logger.is_running():
@@ -329,12 +377,12 @@ async def api_file_delete(req: DeleteRequest):
 
 @app.get("/api/history")
 async def api_history():
-    return JSONResponse(logger.list_job_history())
+    return JSONResponse(db.list_job_history())
 
 
 @app.get("/api/history/{job_id}")
 async def api_history_detail(job_id: str):
-    data = logger.get_job_history(job_id)
+    data = db.get_job_history(job_id)
     if data is None:
         raise HTTPException(404, "Job not found")
     return JSONResponse(data)
