@@ -22,14 +22,16 @@ FONT_SUBSET_PATH = "/opt/bulk-translate/fonts/Amiri-subset.ttf"
 
 
 def _resolve_output_path(base_path) -> Path:
-    """Build output path with correct extension and conflict handling."""
+    """Build output path matching source format, with conflict handling."""
     fpath = Path(str(base_path))
     stem = fpath.stem
     for suffix in (".en", ".eng", ".en.hi"):
         if stem.endswith(suffix):
             stem = stem[:-len(suffix)]
             break
-    ext = ".ar.ass" if cfg.get("OUTPUT_FORMAT", "ass") == "ass" else ".ar.srt"
+    # Match source format
+    source_ext = fpath.suffix.lower()
+    ext = ".ar.ass" if source_ext in (".ass", ".ssa") else ".ar.srt"
     out_path = fpath.with_name(stem + ext)
 
     if cfg.get("FILE_CONFLICT", "overwrite") == "rename":
@@ -112,7 +114,6 @@ def reassemble_files(translated_blob: dict, meta: dict, files: list):
 
     Returns (completed_names, warnings_list).
     """
-    output_format = cfg.get("OUTPUT_FORMAT", "ass")
     file_cues = {i + 1: [] for i in range(len(files))}
     for tag, m in meta.items():
         file_cues[m["file_idx"]].append((tag, m))
@@ -148,8 +149,9 @@ def reassemble_files(translated_blob: dict, meta: dict, files: list):
             })
 
         out_path = _resolve_output_path(fpath)
+        is_ass = out_path.suffix == ".ass"
 
-        if output_format == "ass":
+        if is_ass:
             ass_content = _build_ass_output(blocks, cues)
             out_path.write_text(ass_content, encoding="utf-8")
         else:

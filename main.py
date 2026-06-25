@@ -51,7 +51,6 @@ class SettingsRequest(BaseModel):
     MAX_BLOB_LINES: int
     MAX_FAILED_CHUNKS: int
     FILE_CONFLICT: str
-    OUTPUT_FORMAT: str
     EMBED_FONT: bool
     PRESERVE_ASS_POSITIONS: bool
     PRESERVE_TAGS: str

@@ -410,7 +410,6 @@ async function loadSettings(){
   document.getElementById('s-cool').value=s.RETRY_COOLDOWN;
   document.getElementById('s-maxblob').value=s.MAX_BLOB_LINES;
   document.getElementById('s-maxfailed').value=s.MAX_FAILED_CHUNKS||5;
-  document.getElementById('s-format').value=s.OUTPUT_FORMAT||'ass';
   document.getElementById('s-conflict').value=s.FILE_CONFLICT||'overwrite';
   document.getElementById('s-embed').value=String(s.EMBED_FONT!==false);
   document.getElementById('s-preserve').value=String(s.PRESERVE_ASS_POSITIONS===true);
