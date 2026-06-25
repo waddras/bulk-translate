@@ -23,6 +23,8 @@ SETTINGS_PATH = "/opt/bulk-translate/settings.json"
 DEFAULT_SETTINGS = {
     "NUM_CHUNKS":               1,      # split deduped blob into N chunks (1 = single shot)
     "MAX_LINES_PER_CHUNK":      1000,   # max lines per chunk (chunks split evenly, each <= this)
+    "PARALLEL_CHUNKS":          1,      # number of chunks sent simultaneously (1 = sequential)
+    "PARALLEL_COOLDOWN":        60,     # seconds between parallel batch starts
     "TRANSLATION_MODE":         "chunked",  # "chunked", "multi_turn", or "full_context"
     "GEMINI_MAX_OUTPUT_TOKENS": 0,      # sent as maxOutputTokens (0 = omit, use model default)
     "OOS_THRESHOLD":            2,      # retry-exhaustions/day before a model is marked OOS

@@ -10,11 +10,13 @@ function clearAll(){
   document.querySelectorAll('#file-list .file-item').forEach(el=>{el.style.display='';});
   document.getElementById('search-input').value='';
   document.getElementById('convert-srt-option').style.display='none';
+  document.getElementById('continue-translate-btn').style.display='none';
   document.getElementById('post-extract-styles').style.display='none';
   document.getElementById('translate-styles').style.display='none';
   document.getElementById('show-name-section').style.display='none';
   document.getElementById('post-extract-styles').style.display='none';
   document.getElementById('convert-srt-option').style.display='none';
+  document.getElementById('continue-translate-btn').style.display='none';
   document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
   if(currentMode==='extract'){document.getElementById('analyze-btn').textContent='Probe Tracks';}
   updateQueue();
@@ -64,6 +66,7 @@ function switchMode(mode){
   document.getElementById('show-name-section').style.display='none';
   document.getElementById('post-extract-styles').style.display='none';
   document.getElementById('convert-srt-option').style.display='none';
+  document.getElementById('continue-translate-btn').style.display='none';
   document.getElementById('sb-title').textContent=mode==='extract'?'Extract Setup':'Queue';
   document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
   // Button labels
@@ -148,6 +151,7 @@ async function checkAnalyzeStatus(){
     document.getElementById('show-name-section').style.display='block';
   document.getElementById('post-extract-styles').style.display='none';
   document.getElementById('convert-srt-option').style.display='none';
+  document.getElementById('continue-translate-btn').style.display='none';
     document.getElementById('show-name-input').value=res.show_name;
   }
 }
@@ -272,8 +276,15 @@ function startSSE(){
         else if(msg.cancelled)toast('Job cancelled successfully');
         else toast('Done');
         checkAnalyzeStatus();
-        if(currentMode==='extract')loadProbeResults();
-        if(currentMode==='extract')loadExtractedStyles();
+        if(currentMode==='extract'){
+          loadProbeResults();
+          loadExtractedStyles();
+          // Show Continue to Translate button if extraction produced files
+          if(msg.completed_files&&msg.completed_files.length>0){
+            document.getElementById('continue-translate-btn').style.display='inline-block';
+          }
+        }
+      }
       }
     } else if(msg.type==='end'){
       if(evtSource){evtSource.close();evtSource=null;}
@@ -374,6 +385,36 @@ async function applyTranslateStyleFilter(){
   else{const e=await res.json();toast(e.detail||'Filter failed',false);}
 }
 
+async function continueToTranslate(){
+  // Get completed extracted files from last job
+  const status=await fetch('/api/job-status').then(r=>r.json());
+  const completed=status.completed_files||[];
+  if(!completed.length){toast('No extracted files to translate',false);return;}
+  // Switch to translate mode
+  document.querySelector('input[name="mode"][value="translate"]').checked=true;
+  currentMode='translate';
+  document.getElementById('file-label').textContent='Subtitle Files (.srt / .ass)';
+  document.getElementById('delete-btn').style.display='inline-block';
+  document.getElementById('fixrtl-btn').style.display='inline-block';
+  document.getElementById('queue-panel').style.display='block';
+  document.getElementById('extract-panel').style.display='none';
+  document.getElementById('translate-styles').style.display='none';
+  document.getElementById('post-extract-styles').style.display='none';
+  document.getElementById('convert-srt-option').style.display='none';
+  document.getElementById('continue-translate-btn').style.display='none';
+  document.getElementById('sb-title').textContent='Queue';
+  document.getElementById('styles-btn').style.display='none';
+  document.getElementById('analyze-btn').textContent='Analyze';
+  document.getElementById('translate-btn').textContent='Translate';
+  document.getElementById('continue-translate-btn').style.display='none';
+  // Auto-select extracted files
+  selected=completed.map(f=>currentPath+'/'+f);
+  updateQueue();
+  navigate();
+  showTab('files');
+  toast('Extracted files queued for translation');
+}
+
 // === Log ===
 async function loadLog(){
   const status=await fetch('/api/job-status').then(r=>r.json());
@@ -418,6 +459,8 @@ async function loadSettings(){
   const s=await fetch('/api/settings').then(r=>r.json());
   document.getElementById('s-mode').value=s.TRANSLATION_MODE||'chunked';
   document.getElementById('s-maxlines').value=s.MAX_LINES_PER_CHUNK||1000;
+  document.getElementById('s-parallel').value=s.PARALLEL_CHUNKS||1;
+  document.getElementById('s-cooldown').value=s.PARALLEL_COOLDOWN||60;
   document.getElementById('s-gmaxout').value=s.GEMINI_MAX_OUTPUT_TOKENS;
   document.getElementById('s-oos').value=s.OOS_THRESHOLD;
   document.getElementById('s-retry').value=s.RETRY_ATTEMPTS;

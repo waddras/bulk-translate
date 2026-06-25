@@ -5,6 +5,7 @@ The two-step flow stores analyze results in module-level state so that
 Translate can pick them up without re-parsing.
 """
 from pathlib import Path
+import asyncio
 
 import httpx
 
@@ -224,20 +225,45 @@ async def run_translate() -> None:
                         jlog(f"  Chunk {i}/{len(chunks)} - FAILED or cancelled")
 
         else:  # chunked (default)
+            parallel = max(1, cfg.get("PARALLEL_CHUNKS", 1))
+            cooldown = cfg.get("PARALLEL_COOLDOWN", 60)
+            jlog(f"  Parallel: {parallel} chunks at a time, {cooldown}s cooldown between batches")
+            import time as _time
             async with httpx.AsyncClient() as client:
-                for i, chunk in enumerate(chunks, 1):
+                for batch_start in range(0, len(chunks), parallel):
                     if logger.is_cancelled():
-                        jlog(f"CANCELLED after chunk {i - 1}/{len(chunks)}")
+                        jlog(f"CANCELLED")
                         break
+                    batch = chunks[batch_start:batch_start + parallel]
+                    batch_start_time = _time.time()
+                    jlog(f"  Sending batch: chunks {batch_start+1}-{batch_start+len(batch)} of {len(chunks)}")
 
-                    result = await ai.translate_chunk(
-                        client, chunk, i, len(chunks), api_keys, key_idx_ref, show_name
-                    )
-                    if result:
-                        translated_unique.update(result)
-                        jlog(f"  Chunk {i}/{len(chunks)} - {len(result)}/{len(chunk)} lines translated")
-                    else:
-                        jlog(f"  Chunk {i}/{len(chunks)} - FAILED or cancelled")
+                    # Fire all chunks in this batch simultaneously
+                    async def translate_one(chunk, idx):
+                        return await ai.translate_chunk(
+                            client, chunk, idx, len(chunks), api_keys, key_idx_ref, show_name
+                        )
+
+                    tasks = [translate_one(ch, batch_start + i + 1) for i, ch in enumerate(batch)]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    for i, result in enumerate(results):
+                        chunk_idx = batch_start + i + 1
+                        if isinstance(result, Exception):
+                            jlog(f"  Chunk {chunk_idx}/{len(chunks)} - ERROR: {result}")
+                        elif result:
+                            translated_unique.update(result)
+                            jlog(f"  Chunk {chunk_idx}/{len(chunks)} - {len(result)}/{len(batch[i])} lines translated")
+                        else:
+                            jlog(f"  Chunk {chunk_idx}/{len(chunks)} - FAILED or cancelled")
+
+                    # Wait cooldown if more batches remain
+                    if batch_start + parallel < len(chunks) and not logger.is_cancelled():
+                        elapsed = _time.time() - batch_start_time
+                        wait = max(0, cooldown - elapsed)
+                        if wait > 0:
+                            jlog(f"  Cooldown: waiting {wait:.0f}s before next batch...")
+                            await asyncio.sleep(wait)
         cancelled = logger.is_cancelled()
         if cancelled:
             logger.mark_cancelled()

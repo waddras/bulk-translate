@@ -58,6 +58,8 @@
           <div class="settings-grid">
             <div class="field"><label>Translation Mode</label><select id="s-mode"><option value="chunked">Chunked (default)</option><option value="multi_turn">Multi-turn conversation</option><option value="full_context">Full context per chunk</option></select></div>
             <div class="field"><label>MAX_LINES_PER_CHUNK</label><input id="s-maxlines" type="number" min="1"></div>
+            <div class="field"><label>PARALLEL_CHUNKS</label><input id="s-parallel" type="number" min="1"></div>
+            <div class="field"><label>PARALLEL_COOLDOWN (sec)</label><input id="s-cooldown" type="number" min="0"></div>
             <div class="field"><label>GEMINI_MAX_OUTPUT (0=default)</label><input id="s-gmaxout" type="number"></div>
             <div class="field"><label>MAX_BLOB_LINES</label><input id="s-maxblob" type="number"></div>
           </div>
@@ -115,7 +117,7 @@
   </div>
 
   <div id="tab-log" class="panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0"><div class="sec-label">Live Job Log</div><button class="btn-sm" onclick="loadLog()">Refresh</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0"><div class="sec-label">Live Job Log</div><div style="display:flex;gap:8px"><button class="btn-sm" onclick="loadLog()">Refresh</button><button id="continue-translate-btn" style="display:none;background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600" onclick="continueToTranslate()">Continue to Translate</button></div></div>
     <div id="log-box" class="log-box">No job logs yet.</div>
   </div>
 

@@ -44,6 +44,8 @@ class AddKeyRequest(BaseModel):
 class SettingsRequest(BaseModel):
     TRANSLATION_MODE: str
     MAX_LINES_PER_CHUNK: int
+    PARALLEL_CHUNKS: int
+    PARALLEL_COOLDOWN: int
     GEMINI_MAX_OUTPUT_TOKENS: int
     OOS_THRESHOLD: int
     RETRY_ATTEMPTS: int
