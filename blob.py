@@ -105,38 +105,48 @@ def expand_translations(translated_unique: dict, meta: dict) -> dict:
 def build_retry_with_context(missing_keys: set, full_payload: dict, context_lines: int = 3) -> list:
     """Build retry chunks for missing keys, including neighboring lines as context.
 
-    Each retry chunk contains the missing lines + surrounding context lines.
+    Splits based on TOTAL lines (translate + context) not exceeding MAX_LINES_PER_CHUNK.
     Returns list of dicts: [{"translate_keys": [...], "context": {all keys+values}}]
     """
     all_keys = list(full_payload.keys())
     key_to_idx = {k: i for i, k in enumerate(all_keys)}
     max_lines = max(1, cfg.get("MAX_LINES_PER_CHUNK", 1000))
 
-    # For each missing key, gather its context window
     missing_sorted = sorted(missing_keys, key=lambda k: key_to_idx.get(k, 0))
 
-    # Split missing into batches of max_lines
-    batches = []
-    for i in range(0, len(missing_sorted), max_lines):
-        batch_keys = missing_sorted[i:i + max_lines]
-        batches.append(batch_keys)
-
+    # Build individual context windows for each missing key
+    # Then group them into batches where total (translate + context) <= max_lines
     result = []
-    for batch_keys in batches:
-        # Collect context: for each missing key, include neighbors
-        context_set = set()
-        for k in batch_keys:
-            idx = key_to_idx.get(k, 0)
-            for offset in range(-context_lines, context_lines + 1):
-                neighbor_idx = idx + offset
-                if 0 <= neighbor_idx < len(all_keys):
-                    context_set.add(all_keys[neighbor_idx])
+    current_batch_keys = []
+    current_context_set = set()
 
-        # Build the context dict (includes the missing keys + neighbors)
-        context = {k: full_payload[k] for k in sorted(context_set, key=lambda x: key_to_idx.get(x, 0))}
-        result.append({
-            "translate_keys": batch_keys,
-            "context": context,
-        })
+    for k in missing_sorted:
+        # Calculate what adding this key would cost
+        idx = key_to_idx.get(k, 0)
+        new_context = set()
+        for offset in range(-context_lines, context_lines + 1):
+            neighbor_idx = idx + offset
+            if 0 <= neighbor_idx < len(all_keys):
+                new_context.add(all_keys[neighbor_idx])
+
+        # Check if adding this key would exceed max_lines
+        combined_context = current_context_set | new_context
+        total_lines = len(combined_context)
+
+        if total_lines > max_lines and current_batch_keys:
+            # Flush current batch
+            context = {ck: full_payload[ck] for ck in sorted(current_context_set, key=lambda x: key_to_idx.get(x, 0))}
+            result.append({"translate_keys": current_batch_keys, "context": context})
+            # Start new batch with this key
+            current_batch_keys = [k]
+            current_context_set = new_context
+        else:
+            current_batch_keys.append(k)
+            current_context_set = combined_context
+
+    # Flush remaining
+    if current_batch_keys:
+        context = {ck: full_payload[ck] for ck in sorted(current_context_set, key=lambda x: key_to_idx.get(x, 0))}
+        result.append({"translate_keys": current_batch_keys, "context": context})
 
     return result

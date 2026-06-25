@@ -250,36 +250,43 @@ async def run_translate() -> None:
                 all_payload_keys.update(ch.keys())
             global_missing = all_payload_keys - set(translated_unique.keys())
             max_retries = cfg.get("MAX_FAILED_CHUNKS", 5)
-            retry_num = 0
+            retry_round = 0
 
-            while global_missing and retry_num < max_retries and not logger.is_cancelled():
-                retry_num += 1
-                jlog(f"  Global retry {retry_num}/{max_retries} - {len(global_missing)} lines still missing")
+            while global_missing and retry_round < max_retries and not logger.is_cancelled():
+                retry_round += 1
+                jlog(f"  Retry round {retry_round}/{max_retries} - {len(global_missing)} lines missing")
 
-                # Build retry batches with context
+                # Build retry batches with context (split by total lines <= MAX_LINES_PER_CHUNK)
                 retry_batches = blob.build_retry_with_context(global_missing, payload, context_lines=3)
+                jlog(f"    Split into {len(retry_batches)} retry batches")
+
                 async with httpx.AsyncClient() as client:
-                    for batch in retry_batches:
+                    for batch_num, batch in enumerate(retry_batches, 1):
                         if logger.is_cancelled():
                             break
-                        retry_key_idx = [0]
+                        # Each batch gets a fresh model (cycles through available)
+                        retry_key_idx = [batch_num - 1]
                         result = await ai.translate_retry_with_context(
                             client, batch["translate_keys"], batch["context"],
-                            retry_num, max_retries, api_keys, retry_key_idx, show_name
+                            batch_num, len(retry_batches), api_keys, retry_key_idx, show_name
                         )
                         if result:
                             translated_unique.update(result)
                             recovered = global_missing & set(result.keys())
                             global_missing -= recovered
-                            jlog(f"    Recovered {len(recovered)} lines, {len(global_missing)} still missing")
+                            jlog(f"    Batch {batch_num}/{len(retry_batches)} - recovered {len(recovered)} lines")
                         else:
-                            jlog(f"    Batch FAILED")
+                            jlog(f"    Batch {batch_num}/{len(retry_batches)} - FAILED")
+
+                if not global_missing:
+                    jlog(f"  All lines recovered after {retry_round} retry rounds!")
+                    break
 
             # Store untranslated lines for the Fix Translation feature
             if global_missing:
                 untranslated_list = [{"tag": k, "text": payload.get(k, "")} for k in sorted(global_missing)]
                 logger.set_untranslated(untranslated_list)
-                jlog(f"  {len(global_missing)} lines remain untranslated:")
+                jlog(f"  {len(global_missing)} lines remain untranslated after {retry_round} retries:")
                 for item in untranslated_list:
                     jlog(f"    {item['text']}")
 
