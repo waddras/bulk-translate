@@ -6,15 +6,18 @@ function toast(msg,ok=true){const el=document.getElementById('toast');el.textCon
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function clearAll(){
   selected=[];selectedTrack=null;
-  updateQueue();
-  document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
-  document.getElementById('style-section').style.display='none';
-  document.getElementById('style-list').innerHTML='';
+  document.querySelectorAll('#file-list input[type=checkbox]').forEach(cb=>{cb.checked=false;cb.closest('.file-item').classList.remove('sel');});
+  document.querySelectorAll('#file-list .file-item').forEach(el=>{el.style.display='';});
+  document.getElementById('search-input').value='';
+  document.getElementById('convert-srt-option').style.display='none';
+  document.getElementById('post-extract-styles').style.display='none';
   document.getElementById('translate-styles').style.display='none';
   document.getElementById('show-name-section').style.display='none';
+  document.getElementById('post-extract-styles').style.display='none';
+  document.getElementById('convert-srt-option').style.display='none';
+  document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
   if(currentMode==='extract'){document.getElementById('analyze-btn').textContent='Probe Tracks';}
-  document.getElementById('search-input').value='';
-  navigate();
+  updateQueue();
   toast('Cleared');
 }
 function goUp(){
@@ -49,7 +52,9 @@ function showTab(name){
 
 // === Mode switching ===
 function switchMode(mode){
-  currentMode=mode;selected=[];selectedTrack=null;updateQueue();
+  currentMode=mode;selected=[];selectedTrack=null;
+  document.querySelectorAll("#file-list input[type=checkbox]").forEach(cb=>{cb.checked=false;cb.closest(".file-item").classList.remove("sel");});
+  document.getElementById("search-input").value="";
   document.getElementById('file-label').textContent=mode==='extract'?'Video Files (.mkv)':'Subtitle Files (.srt / .ass)';
   document.getElementById('delete-btn').style.display=mode==='extract'?'none':'inline-block';
   document.getElementById('fixrtl-btn').style.display=mode==='extract'?'none':'inline-block';
@@ -57,9 +62,10 @@ function switchMode(mode){
   document.getElementById('extract-panel').style.display=mode==='extract'?'block':'none';
   document.getElementById('translate-styles').style.display='none';
   document.getElementById('show-name-section').style.display='none';
+  document.getElementById('post-extract-styles').style.display='none';
+  document.getElementById('convert-srt-option').style.display='none';
   document.getElementById('sb-title').textContent=mode==='extract'?'Extract Setup':'Queue';
   document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
-  document.getElementById('style-section').style.display='none';
   // Button labels
   if(mode==='extract'){
     document.getElementById('styles-btn').style.display='none';
@@ -140,6 +146,8 @@ async function checkAnalyzeStatus(){
   document.getElementById('translate-btn').disabled=!res.ready||jobRunning||translatePhase;
   if(res.ready&&res.show_name){
     document.getElementById('show-name-section').style.display='block';
+  document.getElementById('post-extract-styles').style.display='none';
+  document.getElementById('convert-srt-option').style.display='none';
     document.getElementById('show-name-input').value=res.show_name;
   }
 }
@@ -153,7 +161,7 @@ async function detectTranslateStyles(){
   const el=document.getElementById('translate-style-list');
   if(!styles.length){document.getElementById('translate-styles').style.display='none';return;}
   document.getElementById('translate-styles').style.display='block';
-  el.innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" checked class="translate-style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
+  el.innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" class="translate-style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
 }
 
 async function runAnalyzeStyles(){
@@ -336,7 +344,7 @@ async function loadExtractedStyles(){
   const styles=data.styles||[];
   if(!styles.length)return;
   document.getElementById('post-extract-styles').style.display='block';
-  document.getElementById('extract-style-list').innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" checked class="extract-style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
+  document.getElementById('extract-style-list').innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" class="extract-style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
 }
 
 async function applyStyleFilter(){
@@ -349,6 +357,19 @@ async function applyStyleFilter(){
   const fullPaths=completed.map(f=>currentPath+'/'+f);
   toast('Filtering styles...');
   const res=await fetch('/api/filter-styles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:fullPaths,keep_styles:keepStyles})});
+  if(res.ok){const r=await res.json();toast(r.filtered+' files updated: '+r.lines_removed+' lines removed, '+r.styles_removed+' styles removed');}
+  else{const e=await res.json();toast(e.detail||'Filter failed',false);}
+}
+
+async function applyTranslateStyleFilter(){
+  const keepStyles=Array.from(document.querySelectorAll('.translate-style-cb:checked')).map(cb=>cb.value);
+  if(!keepStyles.length){toast('Select at least one style',false);return;}
+  // Filter the selected source ASS files directly
+  const assFiles=selected.filter(p=>p.toLowerCase().endsWith('.ass'));
+  if(!assFiles.length){toast('No ASS files selected',false);return;}
+  if(!confirm('This will modify '+assFiles.length+' source file(s). Continue?'))return;
+  toast('Filtering styles...');
+  const res=await fetch('/api/filter-styles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:assFiles,keep_styles:keepStyles})});
   if(res.ok){const r=await res.json();toast(r.filtered+' files updated: '+r.lines_removed+' lines removed, '+r.styles_removed+' styles removed');}
   else{const e=await res.json();toast(e.detail||'Filter failed',false);}
 }
