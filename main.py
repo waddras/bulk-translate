@@ -33,7 +33,7 @@ class ExtractRequest(BaseModel):
     files: List[str]
     track_index: int
     suffix: str
-    keep_styles: List[str] = []
+    convert_to_srt: bool = False
 
 
 class AddKeyRequest(BaseModel):
@@ -56,7 +56,6 @@ class SettingsRequest(BaseModel):
     PRESERVE_ASS_POSITIONS: bool
     PRESERVE_TAGS: str
     PROMPT_TEMPLATE: str
-    CONVERT_TO_SRT_AFTER_EXTRACT: bool
     FONT_NAME: str
     FONT_SIZE: int
     FONT_OUTLINE: int
@@ -311,9 +310,27 @@ async def api_extract(payload: ExtractRequest, background_tasks: BackgroundTasks
         raise HTTPException(400, "Suffix is required")
     background_tasks.add_task(
         extract.run_extract, payload.files, payload.track_index,
-        payload.suffix, payload.keep_styles or None
+        payload.suffix, payload.convert_to_srt
     )
     return {"ok": True, "queued": len(payload.files)}
+
+
+class FilterStylesRequest(BaseModel):
+    paths: List[str]
+    keep_styles: List[str]
+
+
+@app.post("/api/filter-styles")
+async def api_filter_styles(req: FilterStylesRequest):
+    """Filter styles from extracted ASS files."""
+    from extract import _filter_ass_styles
+    filtered = 0
+    for fp in req.paths:
+        p = Path(fp)
+        if p.exists() and p.suffix == ".ass":
+            _filter_ass_styles(str(p), req.keep_styles)
+            filtered += 1
+    return {"ok": True, "filtered": filtered}
 
 
 @app.get("/api/probe-styles")

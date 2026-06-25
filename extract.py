@@ -87,7 +87,7 @@ def extract_styles_from_track(filepath: str, track_index: int) -> list:
         Path(tmp.name).unlink(missing_ok=True)
 
 
-def extract_subtitle(filepath: str, track_index: int, suffix: str, codec: str = "ass") -> str:
+def extract_subtitle(filepath: str, track_index: int, suffix: str, codec: str = "ass", convert_to_srt: bool = False) -> str:
     """Extract a single subtitle track from an MKV using -c:s copy.
 
     Args:
@@ -95,6 +95,7 @@ def extract_subtitle(filepath: str, track_index: int, suffix: str, codec: str = 
         track_index: subtitle stream index (0-based among subtitle streams)
         suffix: output suffix e.g. ".en.dialogue"
         codec: source codec from probe (subrip, ass, ssa) — determines output extension
+        convert_to_srt: if True and source is ASS, convert to SRT after extraction
 
     Returns: path to the extracted subtitle file
     """
@@ -117,12 +118,11 @@ def extract_subtitle(filepath: str, track_index: int, suffix: str, codec: str = 
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
-        # Show last 300 chars of stderr (actual error, not banner)
         err = result.stderr.strip()
         raise RuntimeError(f"ffmpeg failed: {err[-300:]}")
 
-    # Convert to SRT if setting is on and source was ASS
-    if cfg.get("CONVERT_TO_SRT_AFTER_EXTRACT", False) and ext == "ass":
+    # Convert to SRT if requested and source was ASS
+    if convert_to_srt and ext == "ass":
         srt_path = out_path.with_suffix(".srt")
         convert_cmd = [
             "ffmpeg", "-y",
@@ -132,9 +132,8 @@ def extract_subtitle(filepath: str, track_index: int, suffix: str, codec: str = 
         ]
         conv_result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=60)
         if conv_result.returncode == 0:
-            out_path.unlink()  # remove the .ass, keep .srt
+            out_path.unlink()
             return str(srt_path)
-        # If conversion fails, keep the .ass
 
     return str(out_path)
 
@@ -206,8 +205,8 @@ async def run_probe(file_paths: list) -> dict:
         logger.set_running(False)
 
 
-async def run_extract(file_paths: list, track_index: int, suffix: str, keep_styles: list = None) -> None:
-    """Extract subtitle track from all selected MKVs, optionally filtering styles."""
+async def run_extract(file_paths: list, track_index: int, suffix: str, convert_to_srt: bool = False) -> None:
+    """Extract subtitle track from all selected MKVs."""
     import logger
     logger.reset_job_status()
     logger.clear_cancel()
@@ -227,10 +226,8 @@ async def run_extract(file_paths: list, track_index: int, suffix: str, keep_styl
 
         ext = "ass" if codec in ("ass", "ssa") else "srt"
         jlog(f"Source codec: {codec} -> output: .{ext}")
-        if cfg.get("CONVERT_TO_SRT_AFTER_EXTRACT", False) and ext == "ass":
-            jlog(f"Convert to SRT after extract: ON")
-        if keep_styles and ext == "ass":
-            jlog(f"Keeping styles: {', '.join(keep_styles)}")
+        if convert_to_srt and ext == "ass":
+            jlog(f"Will convert to SRT after extraction")
 
         completed, failed = [], []
         for i, fp in enumerate(file_paths, 1):
@@ -240,10 +237,7 @@ async def run_extract(file_paths: list, track_index: int, suffix: str, keep_styl
             fpath = Path(fp)
             jlog(f"  [{i:02d}/{len(file_paths)}] {fpath.name}")
             try:
-                out = extract_subtitle(fp, track_index, suffix, codec)
-                # Filter styles if ASS and styles specified
-                if keep_styles and out.endswith(".ass"):
-                    _filter_ass_styles(out, keep_styles)
+                out = extract_subtitle(fp, track_index, suffix, codec, convert_to_srt)
                 jlog(f"        -> {Path(out).name}")
                 completed.append(Path(out).name)
             except Exception as e:

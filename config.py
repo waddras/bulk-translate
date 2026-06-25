@@ -35,7 +35,6 @@ DEFAULT_SETTINGS = {
     "EMBED_FONT":               True,   # embed subsetted font in ASS output
     "PRESERVE_ASS_POSITIONS":   True,   # keep \pos, \an, \move, \fad, \fade from input ASS
     "PRESERVE_TAGS":            "pos, an, move, fad, fade;",  # comma-separated tag names to preserve
-    "CONVERT_TO_SRT_AFTER_EXTRACT": False,  # convert ASS to SRT after extraction
     "FONT_NAME":                "Amiri",
     "FONT_SIZE":                40,
     "FONT_OUTLINE":             1,

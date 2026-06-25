@@ -71,7 +71,6 @@
             <div class="field"><label>Output Format</label><select id="s-format"><option value="ass">ASS</option><option value="srt">SRT</option></select></div>
             <div class="field"><label>Embed Font (ASS)</label><select id="s-embed"><option value="true">Yes</option><option value="false">No</option></select></div>
             <div class="field"><label>File Conflict</label><select id="s-conflict"><option value="overwrite">Overwrite</option><option value="rename">Rename</option></select></div>
-            <div class="field"><label>Convert ASS to SRT after extract</label><select id="s-convert"><option value="false">No</option><option value="true">Yes</option></select></div>
           </div>
         </div>
       </div>
@@ -143,14 +142,17 @@
     <div id="extract-panel" class="extract-panel" style="display:none">
       <div class="sec-label" style="margin-bottom:8px">1. Select Track</div>
       <div id="track-list"><div class="empty" style="font-size:12px">Run Probe first</div></div>
-      <div id="style-section" style="display:none;margin-top:12px">
-        <div class="sec-label" style="margin-bottom:8px">2. Keep Styles</div>
-        <div id="style-list" style="max-height:30vh;overflow-y:auto"><div class="empty" style="font-size:12px">Select track then Probe Styles</div></div>
-        <div id="srt-warning" style="display:none;font-size:11px;color:var(--yellow);margin-top:8px;padding:8px;background:#3a3a1a;border-radius:6px">Style filtering only available with ASS output</div>
+      <div id="convert-srt-option" style="display:none;margin-top:10px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" id="convert-to-srt"> Convert to SRT after extract</label>
       </div>
       <div style="margin-top:12px">
-        <div class="sec-label" style="margin-bottom:8px">3. Suffix</div>
+        <div class="sec-label" style="margin-bottom:8px">2. Suffix</div>
         <div class="field"><input id="ext-suffix" type="text" value=".en" placeholder=".en.dialogue" style="width:100%"></div>
+      </div>
+      <div id="post-extract-styles" style="display:none;margin-top:12px">
+        <div class="sec-label" style="margin-bottom:8px">3. Filter Styles</div>
+        <div id="extract-style-list" style="max-height:30vh;overflow-y:auto"></div>
+        <button class="btn-muted" style="margin-top:8px;width:100%" onclick="applyStyleFilter()">Apply Style Filter</button>
       </div>
     </div>
   </div>

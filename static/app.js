@@ -1,11 +1,11 @@
 // === State ===
-let selected=[], currentPath='/mnt/secure/srv/hddmedia/anime', jobRunning=false, translatePhase=false, currentMode='translate', evtSource=null, selectedTrack=null, extractStep='tracks';
+let selected=[], currentPath='/mnt/secure/srv/hddmedia/anime', jobRunning=false, translatePhase=false, currentMode='translate', evtSource=null, selectedTrack=null;
 
 // === Utilities ===
 function toast(msg,ok=true){const el=document.getElementById('toast');el.textContent=msg;el.style.borderColor=ok?'var(--green)':'var(--red)';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3500);}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function clearAll(){
-  selected=[];selectedTrack=null;extractStep='tracks';
+  selected=[];selectedTrack=null;
   updateQueue();
   document.getElementById('track-list').innerHTML='<div class="empty" style="font-size:12px">Run Probe first</div>';
   document.getElementById('style-section').style.display='none';
@@ -49,7 +49,7 @@ function showTab(name){
 
 // === Mode switching ===
 function switchMode(mode){
-  currentMode=mode;selected=[];selectedTrack=null;extractStep='tracks';updateQueue();
+  currentMode=mode;selected=[];selectedTrack=null;updateQueue();
   document.getElementById('file-label').textContent=mode==='extract'?'Video Files (.mkv)':'Subtitle Files (.srt / .ass)';
   document.getElementById('delete-btn').style.display=mode==='extract'?'none':'inline-block';
   document.getElementById('fixrtl-btn').style.display=mode==='extract'?'none':'inline-block';
@@ -168,7 +168,7 @@ async function runAnalyzeStyles(){
 function setBtnLoading(id,text){document.getElementById(id).disabled=true;document.getElementById(id).textContent=text;}
 function resetBtnLabels(){
   if(currentMode==='extract'){
-    document.getElementById('analyze-btn').textContent=extractStep==='tracks'?'Probe Tracks':'Probe Styles';
+    document.getElementById('analyze-btn').textContent='Probe Tracks';
   } else {
     document.getElementById('analyze-btn').textContent='Analyze';
   }
@@ -179,18 +179,10 @@ function resetBtnLabels(){
 async function runAnalyze(){
   if(!selected.length)return;
   if(currentMode==='extract'){
-    if(extractStep==='tracks'){
-      setBtnLoading('analyze-btn','Probing...');
-      const res=await fetch('/api/probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
-      if(res.ok){setJobRunning(true);showTab('log');startSSE();}
-      else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);resetBtnLabels();}
-    } else {
-      // Probe styles for selected track
-      setBtnLoading('analyze-btn','Loading styles...');
-      await loadProbeStyles();
-      document.getElementById('analyze-btn').textContent='Probe Styles';
-      document.getElementById('analyze-btn').disabled=false;
-    }
+    setBtnLoading('analyze-btn','Probing...');
+    const res=await fetch('/api/probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected})});
+    if(res.ok){setJobRunning(true);showTab('log');startSSE();}
+    else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);resetBtnLabels();}
   } else {
     setBtnLoading('analyze-btn','Analyzing...');
     const keepStyles=Array.from(document.querySelectorAll('.translate-style-cb:checked')).map(cb=>cb.value);
@@ -205,10 +197,10 @@ async function runTranslate(){
     if(selectedTrack===null){toast('Select a track first',false);return;}
     const suffix=document.getElementById('ext-suffix').value.trim();
     if(!suffix){toast('Enter a suffix',false);return;}
-    const keepStyles=Array.from(document.querySelectorAll('.style-cb:checked')).map(cb=>cb.value);
+    const convertToSrt=document.getElementById('convert-to-srt').checked;
     setBtnLoading('translate-btn','Extracting...');
     translatePhase=true;
-    const res=await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected,track_index:selectedTrack,suffix:suffix,keep_styles:keepStyles})});
+    const res=await fetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:selected,track_index:selectedTrack,suffix:suffix,convert_to_srt:convertToSrt})});
     if(res.ok){setJobRunning(true);showTab('log');startSSE();}
     else{const err=await res.json();toast('Error: '+(err.detail||'Unknown'),false);translatePhase=false;resetBtnLabels();}
   } else {
@@ -273,6 +265,7 @@ function startSSE(){
         else toast('Done');
         checkAnalyzeStatus();
         if(currentMode==='extract')loadProbeResults();
+        if(currentMode==='extract')loadExtractedStyles();
       }
     } else if(msg.type==='end'){
       if(evtSource){evtSource.close();evtSource=null;}
@@ -310,14 +303,12 @@ async function loadProbeResults(){
       const firstEl=trackEl.querySelector('.track-item:not(.disabled)');
       if(firstEl)firstEl.classList.add('sel');
       if(first.codec==='ass'||first.codec==='ssa'){
-        document.getElementById('style-section').style.display='block';
-        document.getElementById('style-list').innerHTML='<div class="empty" style="font-size:12px">Click Probe Styles to load</div>';
+        document.getElementById('convert-srt-option').style.display='block';
       }
     }
   }
-  // Update button: show Probe Styles in extract mode
-  extractStep='styles';
-  document.getElementById('analyze-btn').textContent='Probe Styles';
+  // Enable Extract button
+  document.getElementById('analyze-btn').textContent='Probe Tracks';
   document.getElementById('analyze-btn').disabled=false;
   checkAnalyzeStatus();
 }
@@ -326,12 +317,8 @@ function selectTrack(idx,el,codec){
   selectedTrack=idx;
   document.querySelectorAll('.track-item').forEach(t=>t.classList.remove('sel'));
   el.classList.add('sel');
-  if(codec==='ass'||codec==='ssa'){
-    document.getElementById('style-section').style.display='block';
-    document.getElementById('style-list').innerHTML='<div class="empty" style="font-size:12px">Click Probe Styles to load</div>';
-  } else {
-    document.getElementById('style-section').style.display='none';
-  }
+  // Show convert-to-SRT checkbox only for ASS tracks
+  document.getElementById('convert-srt-option').style.display=(codec==='ass'||codec==='ssa')?'block':'none';
   checkAnalyzeStatus();
 }
 
@@ -342,6 +329,35 @@ async function loadProbeStyles(){
   const styles=res.styles||[];
   if(!styles.length){el.innerHTML='<div class="empty" style="font-size:12px">No styles detected</div>';return;}
   el.innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" checked class="style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
+}
+
+async function loadExtractedStyles(){
+  // After extraction, detect styles from the extracted ASS files
+  const status=await fetch('/api/job-status').then(r=>r.json());
+  const completed=status.completed_files||[];
+  // Get paths of extracted .ass files from the current directory
+  const assFiles=completed.filter(f=>f.endsWith('.ass'));
+  if(!assFiles.length){return;}
+  // Build full paths from current browse path
+  const fullPaths=assFiles.map(f=>currentPath+'/'+f);
+  const res=await fetch('/api/detect-styles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files:fullPaths})});
+  const data=await res.json();
+  const styles=data.styles||[];
+  if(!styles.length)return;
+  document.getElementById('post-extract-styles').style.display='block';
+  document.getElementById('extract-style-list').innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" checked class="extract-style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
+}
+
+async function applyStyleFilter(){
+  const keepStyles=Array.from(document.querySelectorAll('.extract-style-cb:checked')).map(cb=>cb.value);
+  if(!keepStyles.length){toast('Select at least one style',false);return;}
+  // Get extracted file paths
+  const status=await fetch('/api/job-status').then(r=>r.json());
+  const completed=(status.completed_files||[]).filter(f=>f.endsWith('.ass'));
+  const fullPaths=completed.map(f=>currentPath+'/'+f);
+  const res=await fetch('/api/filter-styles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:fullPaths,keep_styles:keepStyles})});
+  if(res.ok){const r=await res.json();toast('Filtered: '+r.filtered+' files updated');}
+  else toast('Filter failed',false);
 }
 
 // === Log ===
@@ -395,7 +411,6 @@ async function loadSettings(){
   document.getElementById('s-maxblob').value=s.MAX_BLOB_LINES;
   document.getElementById('s-maxfailed').value=s.MAX_FAILED_CHUNKS||5;
   document.getElementById('s-format').value=s.OUTPUT_FORMAT||'ass';
-  document.getElementById('s-convert').value=String(s.CONVERT_TO_SRT_AFTER_EXTRACT===true);
   document.getElementById('s-conflict').value=s.FILE_CONFLICT||'overwrite';
   document.getElementById('s-embed').value=String(s.EMBED_FONT!==false);
   document.getElementById('s-preserve').value=String(s.PRESERVE_ASS_POSITIONS===true);
@@ -430,7 +445,6 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={TRANSLATION_MODE:document.getElementById('s-mode').value,MAX_LINES_PER_CHUNK:parseInt(document.getElementById('s-maxlines').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),MAX_FAILED_CHUNKS:parseInt(document.getElementById('s-maxfailed').value),OUTPUT_FORMAT:document.getElementById('s-format').value,CONVERT_TO_SRT_AFTER_EXTRACT:document.getElementById('s-convert').value==='true',FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',PRESERVE_TAGS:document.getElementById('s-tags').value,PROMPT_TEMPLATE:document.getElementById('s-prompt').value,FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value)};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   // Save models separately
   const models=getModelPool();
