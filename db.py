@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""SQLite layer: per-model daily usage/quota/OOS tracking and API-key storage.
+"""SQLite layer: models, daily usage/quota/OOS tracking, and API-key storage.
 
-Shares /opt/bazarr-translator/usage.db with the bazarr-translator service.
-Reads MODEL_POOL / OOS_THRESHOLD from the live cfg at call-time.
+Uses /opt/bulk-translate/bulk-translate.db (independent from bazarr-translator).
 """
 import sqlite3
 from datetime import datetime, timezone, timedelta
@@ -10,17 +9,23 @@ from datetime import datetime, timezone, timedelta
 from config import cfg, DB_PATH
 from logger import log
 
-# Quota resets at 10:30 AM Asia/Qatar (UTC+3). Before 10:30 we're still in
-# the previous day's quota window.
+# Quota resets at 10:30 AM Asia/Qatar (UTC+3).
 _QATAR_OFFSET = timezone(timedelta(hours=3))
-_RESET_HOUR   = 10
+_RESET_HOUR = 10
 _RESET_MINUTE = 30
+
+# Default models to seed on first run
+_DEFAULT_MODELS = [
+    ("gemini-3.5-flash", 20, 5, 1),
+    ("gemini-2.5-flash", 20, 5, 2),
+    ("gemini-2.5-flash-lite", 20, 10, 3),
+    ("gemini-3.1-flash-lite", 500, 15, 4),
+]
 
 
 def day_key() -> str:
     """Return the current quota-period date string (YYYY-MM-DD).
-
-    If it's before 10:30 AM Qatar time, we're still in yesterday's window.
+    If before 10:30 AM Qatar time, still in yesterday's window.
     """
     now = datetime.now(_QATAR_OFFSET)
     if (now.hour, now.minute) < (_RESET_HOUR, _RESET_MINUTE):
@@ -31,6 +36,15 @@ def day_key() -> str:
 # ── Schema ───────────────────────────────────────────────────────────────────
 def init_db() -> None:
     with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS models (
+                id       TEXT    PRIMARY KEY,
+                rpd      INTEGER NOT NULL DEFAULT 20,
+                rpm      INTEGER NOT NULL DEFAULT 5,
+                priority INTEGER NOT NULL UNIQUE,
+                active   INTEGER NOT NULL DEFAULT 1
+            )
+        """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS usage (
                 model          TEXT    NOT NULL,
@@ -50,14 +64,72 @@ def init_db() -> None:
                 added   TEXT    NOT NULL
             )
         """)
-        # Migrate older usage tables that predate these columns.
-        for col in ("failures", "out_of_service"):
-            try:
-                conn.execute(f"ALTER TABLE usage ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
-            except Exception:
-                pass
+        # Seed default models if table is empty
+        count = conn.execute("SELECT COUNT(*) FROM models").fetchone()[0]
+        if count == 0:
+            for model_id, rpd, rpm, priority in _DEFAULT_MODELS:
+                conn.execute(
+                    "INSERT INTO models (id, rpd, rpm, priority, active) VALUES (?,?,?,?,1)",
+                    (model_id, rpd, rpm, priority),
+                )
+            log.info("Seeded default models")
         conn.commit()
     log.info("DB initialized")
+
+
+# ── Models ───────────────────────────────────────────────────────────────────
+def get_model_pool() -> list:
+    """Return all models sorted by priority."""
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT id, rpd, rpm, priority, active FROM models ORDER BY priority"
+        ).fetchall()
+    return [{"id": r[0], "rpd": r[1], "rpm": r[2], "priority": r[3], "active": r[4]} for r in rows]
+
+
+def get_active_models() -> list:
+    """Return only active models sorted by priority."""
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT id, rpd, rpm, priority FROM models WHERE active=1 ORDER BY priority"
+        ).fetchall()
+    return [{"id": r[0], "rpd": r[1], "rpm": r[2], "priority": r[3]} for r in rows]
+
+
+def add_model(model_id: str, rpd: int, rpm: int, priority: int) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO models (id, rpd, rpm, priority, active) VALUES (?,?,?,?,1)",
+            (model_id, rpd, rpm, priority),
+        )
+        conn.commit()
+
+
+def update_model(model_id: str, rpd: int, rpm: int, priority: int, active: int) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE models SET rpd=?, rpm=?, priority=?, active=? WHERE id=?",
+            (rpd, rpm, priority, active, model_id),
+        )
+        conn.commit()
+
+
+def delete_model(model_id: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM models WHERE id=?", (model_id,))
+        conn.commit()
+
+
+def save_model_pool(pool: list) -> None:
+    """Replace entire model pool atomically."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM models")
+        for m in pool:
+            conn.execute(
+                "INSERT INTO models (id, rpd, rpm, priority, active) VALUES (?,?,?,?,?)",
+                (m["id"], m["rpd"], m["rpm"], m["priority"], m.get("active", 1)),
+            )
+        conn.commit()
 
 
 # ── API keys ─────────────────────────────────────────────────────────────────
@@ -78,7 +150,6 @@ def get_all_keys() -> list:
 
 
 def add_key(email: str, api_key: str) -> None:
-    """Raises sqlite3.IntegrityError if the email already exists."""
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT INTO api_keys (email, api_key, active, added) VALUES (?,?,1,?)",
@@ -116,36 +187,29 @@ def _get_usage_row(model_id: str, day: str) -> dict:
 
 def get_all_usage() -> list:
     today = day_key()
-    # compute next reset time for display
-    now = datetime.now(_QATAR_OFFSET)
-    reset_today = now.replace(hour=_RESET_HOUR, minute=_RESET_MINUTE, second=0, microsecond=0)
-    if now >= reset_today:
-        next_reset = reset_today + timedelta(days=1)
-    else:
-        next_reset = reset_today
+    models = get_active_models()
     result = []
-    for model in sorted(cfg["MODEL_POOL"], key=lambda m: m.get("priority", 99)):
+    for model in models:
         row = _get_usage_row(model["id"], today)
         result.append({
-            "model":          model["id"],
-            "priority":       model.get("priority", 99),
-            "rpd_limit":      model["rpd"],
-            "used_today":     row["requests"],
-            "remaining":      max(0, model["rpd"] - row["requests"]),
-            "rpd_exhausted":  row["requests"] >= model["rpd"],
-            "failures":       row["failures"],
+            "model": model["id"],
+            "priority": model["priority"],
+            "rpd_limit": model["rpd"],
+            "used_today": row["requests"],
+            "remaining": max(0, model["rpd"] - row["requests"]),
+            "rpd_exhausted": row["requests"] >= model["rpd"],
+            "failures": row["failures"],
             "out_of_service": row["out_of_service"],
         })
     return result
 
 
 def get_usage_meta() -> dict:
-    """Return quota-period metadata for display in the UI."""
     now = datetime.now(_QATAR_OFFSET)
     reset_today = now.replace(hour=_RESET_HOUR, minute=_RESET_MINUTE, second=0, microsecond=0)
     next_reset = reset_today + timedelta(days=1) if now >= reset_today else reset_today
     return {
-        "day_key":    day_key(),
+        "day_key": day_key(),
         "next_reset": next_reset.strftime("%Y-%m-%d %H:%M AST"),
     }
 
@@ -161,7 +225,6 @@ def increment_usage(model_id: str) -> None:
 
 
 def increment_failures(model_id: str) -> int:
-    """Bump the daily failure count; mark OOS once it reaches OOS_THRESHOLD."""
     today = day_key()
     threshold = cfg["OOS_THRESHOLD"]
     with sqlite3.connect(DB_PATH) as conn:
@@ -184,10 +247,11 @@ def increment_failures(model_id: str) -> int:
 
 
 def get_available_model(skip: set = None) -> dict | None:
-    """Lowest-priority-number model that isn't OOS, RPD-exhausted, or skipped."""
+    """Lowest-priority-number active model that isn't OOS or RPD-exhausted."""
     skip = skip or set()
     today = day_key()
-    for model in sorted(cfg["MODEL_POOL"], key=lambda m: m.get("priority", 99)):
+    models = get_active_models()
+    for model in models:
         mid = model["id"]
         if mid in skip:
             continue

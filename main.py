@@ -64,7 +64,10 @@ class SettingsRequest(BaseModel):
     FONT_MARGIN_L: int
     FONT_MARGIN_R: int
     FONT_MARGIN_V: int
-    MODEL_POOL: list
+
+
+class ModelPoolRequest(BaseModel):
+    models: list
 
 
 @app.on_event("startup")
@@ -128,11 +131,24 @@ async def api_get_settings():
 
 @app.post("/api/settings")
 async def api_update_settings(req: SettingsRequest):
-    # Validate no duplicate priorities
-    priorities = [m.get("priority") for m in req.MODEL_POOL if isinstance(m, dict)]
-    if len(priorities) != len(set(priorities)):
-        raise HTTPException(400, "Duplicate priority numbers. Each model must have a unique priority.")
     config.update_settings(req.dict())
+    return {"ok": True}
+
+
+@app.get("/api/models")
+async def api_get_models():
+    return JSONResponse(db.get_model_pool())
+
+
+@app.post("/api/models")
+async def api_save_models(payload: ModelPoolRequest):
+    models = payload.models
+    priorities = [m.get("priority") for m in models if isinstance(m, dict)]
+    if len(priorities) != len(set(priorities)):
+        raise HTTPException(400, "Duplicate priority numbers.")
+    if not models:
+        raise HTTPException(400, "Cannot save empty model pool.")
+    db.save_model_pool(models)
     return {"ok": True}
 
 
