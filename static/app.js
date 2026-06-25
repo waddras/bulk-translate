@@ -406,7 +406,14 @@ async function loadSettings(){
 }
 function renderModelPool(pool){
   const sorted=[...pool].sort((a,b)=>(a.priority||99)-(b.priority||99));
-  document.getElementById('model-pool-list').innerHTML=sorted.map(m=>'<div class="model-row"><input class="model-pri" type="number" value="'+(m.priority||1)+'" min="1"><input class="model-id" value="'+m.id+'" placeholder="model-id"><input class="model-num" type="number" value="'+m.rpd+'" title="RPD"><input class="model-num" type="number" value="'+m.rpm+'" title="RPM"><button class="btn-danger" onclick="this.closest(\'.model-row\').remove()">x</button></div>').join('');
+  const el=document.getElementById('model-pool-list');
+  el.innerHTML='';
+  sorted.forEach(m=>{
+    const row=document.createElement('div');row.className='model-row';
+    row.innerHTML='<input class="model-pri" type="number" value="'+(m.priority||1)+'" min="1"><input class="model-id" value="'+escHtml(m.id)+'" placeholder="model-id"><input class="model-num" type="number" value="'+(m.rpd||20)+'" title="RPD"><input class="model-num" type="number" value="'+(m.rpm||5)+'" title="RPM"><button class="btn-danger">x</button>';
+    row.querySelector('.btn-danger').onclick=function(){row.remove();};
+    el.appendChild(row);
+  });
   document.getElementById('pri-err').style.display='none';
 }
 function getModelPool(){return Array.from(document.querySelectorAll('#model-pool-list .model-row')).map(row=>{const inp=row.querySelectorAll('input');return{priority:parseInt(inp[0].value)||1,id:inp[1].value.trim(),rpd:parseInt(inp[2].value)||20,rpm:parseInt(inp[3].value)||5};}).filter(m=>m.id);}
