@@ -6,6 +6,7 @@ web-visible job log readable; job.py emits the high-level per-chunk summaries.
 """
 import asyncio
 import json
+import time as _time
 
 import httpx
 import json_repair
@@ -14,6 +15,21 @@ from config import cfg
 from logger import log, is_cancelled
 import db
 from blob import estimate_output_tokens
+
+# Global rate limiter — enforces PARALLEL_COOLDOWN between API calls
+_last_api_call = 0.0
+
+
+async def _enforce_cooldown():
+    """Wait until PARALLEL_COOLDOWN seconds have passed since last API call."""
+    global _last_api_call
+    cooldown = cfg.get("PARALLEL_COOLDOWN", 60)
+    elapsed = _time.time() - _last_api_call
+    if _last_api_call > 0 and elapsed < cooldown:
+        wait = cooldown - elapsed
+        log.info(f"  Cooldown: waiting {wait:.0f}s before next API call...")
+        await asyncio.sleep(wait)
+    _last_api_call = _time.time()
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
@@ -81,6 +97,7 @@ async def translate_chunk(client: httpx.AsyncClient, chunk: dict, chunk_num: int
                 return None
             try:
                 log.info(f"CHUNK {chunk_num}/{total} - [{model_id}] attempt {attempt}/{retry_attempts}")
+                await _enforce_cooldown()
                 response = await client.post(
                     url,
                     headers={"x-goog-api-key": key_entry["api_key"]},
@@ -189,6 +206,7 @@ async def translate_multi_turn(client: httpx.AsyncClient, chunks: list, full_pay
             if is_cancelled():
                 break
             try:
+                await _enforce_cooldown()
                 response = await client.post(
                     url,
                     headers={"x-goog-api-key": key_entry["api_key"]},
@@ -275,6 +293,7 @@ async def translate_full_context(client: httpx.AsyncClient, chunk: dict, chunk_n
                 return None
             try:
                 log.info(f"FULL-CTX {chunk_num} - [{model_id}] attempt {attempt}/{retry_attempts}")
+                await _enforce_cooldown()
                 response = await client.post(
                     url,
                     headers={"x-goog-api-key": key_entry["api_key"]},
@@ -365,6 +384,7 @@ async def translate_retry_with_context(client: httpx.AsyncClient, translate_keys
             if is_cancelled():
                 return None
             try:
+                await _enforce_cooldown()
                 response = await client.post(
                     url,
                     headers={"x-goog-api-key": key_entry["api_key"]},

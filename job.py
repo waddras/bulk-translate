@@ -226,16 +226,13 @@ async def run_translate() -> None:
 
         else:  # chunked (default)
             parallel = max(1, cfg.get("PARALLEL_CHUNKS", 1))
-            cooldown = cfg.get("PARALLEL_COOLDOWN", 60)
-            jlog(f"  Parallel: {parallel} chunks at a time, {cooldown}s cooldown between batches")
-            import time as _time
+            jlog(f"  Parallel: {parallel} chunks at a time")
             async with httpx.AsyncClient() as client:
                 for batch_start in range(0, len(chunks), parallel):
                     if logger.is_cancelled():
                         jlog(f"CANCELLED")
                         break
                     batch = chunks[batch_start:batch_start + parallel]
-                    batch_start_time = _time.time()
                     jlog(f"  Sending batch: chunks {batch_start+1}-{batch_start+len(batch)} of {len(chunks)}")
 
                     # Fire all chunks in this batch simultaneously
@@ -256,14 +253,6 @@ async def run_translate() -> None:
                             jlog(f"  Chunk {chunk_idx}/{len(chunks)} - {len(result)}/{len(batch[i])} lines translated")
                         else:
                             jlog(f"  Chunk {chunk_idx}/{len(chunks)} - FAILED or cancelled")
-
-                    # Wait cooldown if more batches remain
-                    if batch_start + parallel < len(chunks) and not logger.is_cancelled():
-                        elapsed = _time.time() - batch_start_time
-                        wait = max(0, cooldown - elapsed)
-                        if wait > 0:
-                            jlog(f"  Cooldown: waiting {wait:.0f}s before next batch...")
-                            await asyncio.sleep(wait)
         cancelled = logger.is_cancelled()
         if cancelled:
             logger.mark_cancelled()
