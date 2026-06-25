@@ -375,6 +375,27 @@ async def api_file_delete(req: DeleteRequest):
     return {"ok": True, "deleted": len(deleted)}
 
 
+@app.post("/api/fix-rtl")
+async def api_fix_rtl(req: DeleteRequest):
+    """Fix RTL marks on selected subtitle files."""
+    from fix_rtl import fix_srt_file, fix_ass_file
+    fixed_files = 0
+    fixed_lines = 0
+    for fp in req.paths:
+        p = Path(fp)
+        if not p.exists() or not p.is_file():
+            continue
+        if p.suffix == ".srt":
+            count = fix_srt_file(p)
+        elif p.suffix == ".ass":
+            count = fix_ass_file(p)
+        else:
+            continue
+        fixed_files += 1
+        fixed_lines += count
+    return {"ok": True, "fixed_files": fixed_files, "fixed_lines": fixed_lines}
+
+
 @app.get("/api/history")
 async def api_history():
     return JSONResponse(db.list_job_history())

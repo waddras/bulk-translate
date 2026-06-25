@@ -27,7 +27,7 @@
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="mode" value="extract" onchange="switchMode('extract')"> Extract Subs</label>
         </div>
         <div class="path-bar"><button class="go-up-btn" onclick="goUp()">Up</button><input id="path-input" value="/mnt/secure/srv/hddmedia/anime" onkeydown="if(event.key==='Enter')navigate()"><button onclick="navigate()">Go</button></div>
-        <div class="toolbar" id="file-toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" id="delete-btn" onclick="deleteSelected()">Delete Selected</button><input id="search-input" type="text" placeholder="Search..." oninput="filterFiles()" style="margin-left:auto;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:5px;font-size:12px;width:160px"></div>
+        <div class="toolbar" id="file-toolbar"><button onclick="selectAll()">Select All</button><button onclick="unselectAll()">Unselect All</button><button class="del-btn" id="delete-btn" onclick="deleteSelected()">Delete Selected</button><button id="fixrtl-btn" onclick="fixRtlSelected()">Fix RTL</button><input id="search-input" type="text" placeholder="Search..." oninput="filterFiles()" style="margin-left:auto;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:5px;font-size:12px;width:160px"></div>
         <div class="sec-label" id="file-label">Subtitle Files (.srt / .ass)</div>
       </div>
       <div style="flex:1;overflow-y:auto">

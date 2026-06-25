@@ -52,6 +52,7 @@ function switchMode(mode){
   currentMode=mode;selected=[];selectedTrack=null;extractStep='tracks';updateQueue();
   document.getElementById('file-label').textContent=mode==='extract'?'Video Files (.mkv)':'Subtitle Files (.srt / .ass)';
   document.getElementById('delete-btn').style.display=mode==='extract'?'none':'inline-block';
+  document.getElementById('fixrtl-btn').style.display=mode==='extract'?'none':'inline-block';
   document.getElementById('queue-panel').style.display=mode==='extract'?'none':'block';
   document.getElementById('extract-panel').style.display=mode==='extract'?'block':'none';
   document.getElementById('translate-styles').style.display='none';
@@ -95,12 +96,19 @@ async function navigate(path){
 function selectAll(){document.querySelectorAll('#file-list .file-item').forEach(el=>{if(el.style.display==='none')return;const cb=el.querySelector('input[type=checkbox]');if(cb&&!cb.checked){cb.checked=true;cb.onchange();}});}
 function unselectAll(){document.querySelectorAll('#file-list .file-item').forEach(el=>{if(el.style.display==='none')return;const cb=el.querySelector('input[type=checkbox]');if(cb&&cb.checked){cb.checked=false;cb.onchange();}});}
 async function deleteSelected(){
-  const sel=Array.from(document.querySelectorAll('#file-list input[type=checkbox]:checked')).map(cb=>cb.dataset.path);
+  const sel=Array.from(document.querySelectorAll('#file-list .file-item')).filter(el=>el.style.display!=='none').map(el=>el.querySelector('input[type=checkbox]')).filter(cb=>cb&&cb.checked).map(cb=>cb.dataset.path);
   if(!sel.length){toast('Nothing selected',false);return;}
   if(!confirm('Delete '+sel.length+' file(s)?'))return;
   const res=await fetch('/api/file/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:sel})});
   if(res.ok){const r=await res.json();toast('Deleted '+r.deleted+' files');selected=selected.filter(p=>!sel.includes(p));updateQueue();navigate();}
   else toast('Delete failed',false);
+}
+async function fixRtlSelected(){
+  const sel=Array.from(document.querySelectorAll('#file-list .file-item')).filter(el=>el.style.display!=='none').map(el=>el.querySelector('input[type=checkbox]')).filter(cb=>cb&&cb.checked).map(cb=>cb.dataset.path);
+  if(!sel.length){toast('Nothing selected',false);return;}
+  const res=await fetch('/api/fix-rtl',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:sel})});
+  if(res.ok){const r=await res.json();toast('Fixed RTL: '+r.fixed_lines+' lines in '+r.fixed_files+' files');}
+  else{const e=await res.json();toast(e.detail||'Fix failed',false);}
 }
 async function renameFile(btn){
   const path=btn.dataset.path;const oldName=btn.dataset.name;
