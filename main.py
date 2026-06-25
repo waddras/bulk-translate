@@ -339,12 +339,6 @@ async def api_filter_styles(req: FilterStylesRequest):
     return {"ok": True, "filtered": filtered, "lines_removed": total_lines_removed, "styles_removed": total_styles_removed}
 
 
-@app.get("/api/probe-styles")
-async def api_probe_styles(track: int = 0):
-    """Return styles detected during last probe."""
-    return JSONResponse({"styles": extract.get_probe_styles()})
-
-
 @app.get("/api/browse")
 async def api_browse(path: str = "/", mode: str = "translate"):
     p = Path(path.strip("'\" ")).resolve()

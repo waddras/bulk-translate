@@ -322,15 +322,6 @@ function selectTrack(idx,el,codec){
   checkAnalyzeStatus();
 }
 
-async function loadProbeStyles(){
-  if(selectedTrack===null)return;
-  const res=await fetch('/api/probe-styles?track='+selectedTrack).then(r=>r.json());
-  const el=document.getElementById('style-list');
-  const styles=res.styles||[];
-  if(!styles.length){el.innerHTML='<div class="empty" style="font-size:12px">No styles detected</div>';return;}
-  el.innerHTML=styles.map(s=>'<label class="style-cb-row"><input type="checkbox" checked class="style-cb" value="'+escHtml(s)+'"> '+escHtml(s)+'</label>').join('');
-}
-
 async function loadExtractedStyles(){
   // After extraction, detect styles from the extracted ASS files
   const status=await fetch('/api/job-status').then(r=>r.json());
