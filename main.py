@@ -323,13 +323,20 @@ class FilterStylesRequest(BaseModel):
 async def api_filter_styles(req: FilterStylesRequest):
     """Filter styles from extracted ASS files."""
     from extract import _filter_ass_styles
+    from logger import log as slog
     filtered = 0
+    total_lines_removed = 0
+    total_styles_removed = 0
+    slog.info(f"STYLE FILTER - {len(req.paths)} files, keeping: {', '.join(req.keep_styles)}")
     for fp in req.paths:
         p = Path(fp)
         if p.exists() and p.suffix == ".ass":
-            _filter_ass_styles(str(p), req.keep_styles)
+            stats = _filter_ass_styles(str(p), req.keep_styles)
             filtered += 1
-    return {"ok": True, "filtered": filtered}
+            total_lines_removed += stats["lines_removed"]
+            total_styles_removed += stats["styles_removed"]
+    slog.info(f"STYLE FILTER COMPLETE - {filtered} files, {total_lines_removed} lines removed, {total_styles_removed} styles removed")
+    return {"ok": True, "filtered": filtered, "lines_removed": total_lines_removed, "styles_removed": total_styles_removed}
 
 
 @app.get("/api/probe-styles")

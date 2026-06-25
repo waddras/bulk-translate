@@ -354,10 +354,12 @@ async function applyStyleFilter(){
   // Get extracted file paths
   const status=await fetch('/api/job-status').then(r=>r.json());
   const completed=(status.completed_files||[]).filter(f=>f.endsWith('.ass'));
+  if(!completed.length){toast('No ASS files to filter',false);return;}
   const fullPaths=completed.map(f=>currentPath+'/'+f);
+  toast('Filtering styles...');
   const res=await fetch('/api/filter-styles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:fullPaths,keep_styles:keepStyles})});
-  if(res.ok){const r=await res.json();toast('Filtered: '+r.filtered+' files updated');}
-  else toast('Filter failed',false);
+  if(res.ok){const r=await res.json();toast(r.filtered+' files updated: '+r.lines_removed+' lines removed, '+r.styles_removed+' styles removed');}
+  else{const e=await res.json();toast(e.detail||'Filter failed',false);}
 }
 
 // === Log ===

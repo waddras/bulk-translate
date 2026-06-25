@@ -268,14 +268,20 @@ async def run_extract(file_paths: list, track_index: int, suffix: str, convert_t
         logger.set_running(False)
 
 
-def _filter_ass_styles(filepath: str, keep_styles: list) -> None:
-    """Remove styles and dialogue lines not in keep_styles from an ASS file."""
+def _filter_ass_styles(filepath: str, keep_styles: list) -> dict:
+    """Remove styles and dialogue lines not in keep_styles from an ASS file.
+    
+    Returns stats: {styles_removed, lines_removed, lines_kept}
+    """
     content = Path(filepath).read_text(encoding="utf-8", errors="replace")
     lines = content.splitlines()
     output = []
     in_styles = False
     in_events = False
     format_fields = []
+    styles_removed = 0
+    lines_removed = 0
+    lines_kept = 0
 
     for line in lines:
         lower = line.strip().lower()
@@ -302,6 +308,9 @@ def _filter_ass_styles(filepath: str, keep_styles: list) -> None:
                 name = line.split(":", 1)[1].split(",")[0].strip()
                 if name in keep_styles:
                     output.append(line)
+                else:
+                    styles_removed += 1
+                    log.info(f"    Removed style: {name}")
             else:
                 output.append(line)
         elif in_events:
@@ -309,18 +318,28 @@ def _filter_ass_styles(filepath: str, keep_styles: list) -> None:
                 format_fields = [f.strip().lower() for f in line.split(":", 1)[1].split(",")]
                 output.append(line)
             elif line.startswith("Dialogue:"):
-                values = line.split(":", 1)[1].split(",", len(format_fields) - 1)
+                raw_after = line.split(":", 1)[1]
+                values = raw_after.split(",", len(format_fields) - 1)
                 if "style" in format_fields:
                     style_idx = format_fields.index("style")
                     if style_idx < len(values):
                         style_name = values[style_idx].strip()
                         if style_name in keep_styles:
                             output.append(line)
+                            lines_kept += 1
+                        else:
+                            lines_removed += 1
+                    else:
+                        output.append(line)
+                        lines_kept += 1
                 else:
                     output.append(line)
+                    lines_kept += 1
             else:
                 output.append(line)
         else:
             output.append(line)
 
     Path(filepath).write_text("\n".join(output), encoding="utf-8")
+    log.info(f"    {Path(filepath).name}: kept {lines_kept} lines, removed {lines_removed} lines, removed {styles_removed} styles")
+    return {"styles_removed": styles_removed, "lines_removed": lines_removed, "lines_kept": lines_kept}
