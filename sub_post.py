@@ -11,6 +11,13 @@ from config import cfg
 from logger import log
 
 RLI = "\u2067"
+PDI = "\u2069"
+
+
+def _wrap_rtl(text: str) -> str:
+    """Wrap each line within a cue with RLI+PDI pair."""
+    lines = text.split("\n")
+    return "\n".join(RLI + line + PDI for line in lines)
 FONT_SUBSET_PATH = "/opt/bulk-translate/fonts/Amiri-subset.ttf"
 
 
@@ -128,9 +135,9 @@ def reassemble_files(translated_blob: dict, meta: dict, files: list):
             pos_tags = m.get("pos_tags", "")
 
             if arabic is not None:
-                text = pos_tags + RLI + arabic if pos_tags else RLI + arabic
+                text = pos_tags + _wrap_rtl(arabic) if pos_tags else _wrap_rtl(arabic)
             else:
-                text = pos_tags + RLI + m["text"] if pos_tags else RLI + m["text"]
+                text = pos_tags + _wrap_rtl(m["text"]) if pos_tags else _wrap_rtl(m["text"])
                 untranslated.append((tag, m["text"]))
 
             blocks.append({
