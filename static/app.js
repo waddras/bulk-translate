@@ -467,7 +467,6 @@ async function loadSettings(){
   document.getElementById('s-maxfailed').value=s.MAX_FAILED_CHUNKS||5;
   document.getElementById('s-conflict').value=s.FILE_CONFLICT||'overwrite';
   document.getElementById('s-embed').value=String(s.EMBED_FONT!==false);
-  document.getElementById('s-preserve').value=String(s.PRESERVE_ASS_POSITIONS===true);
   document.getElementById('s-tags').value=s.PRESERVE_TAGS||'pos, an, move, fad, fade;';
   document.getElementById('s-prompt').value=s.PROMPT_TEMPLATE||'';
   document.getElementById('s-fontname').value=s.FONT_NAME||'Amiri';
@@ -499,7 +498,6 @@ function addModelRow(){const pool=getModelPool();const maxP=pool.reduce((mx,m)=>
 function validatePriorities(){const pool=getModelPool();const pris=pool.map(m=>m.priority);const hasDup=new Set(pris).size!==pris.length;document.getElementById('pri-err').style.display=hasDup?'block':'none';document.getElementById('save-btn').disabled=hasDup;return!hasDup;}
 async function saveSettings(){
   if(!validatePriorities()){toast('Fix duplicate priorities',false);return;}
-  const body={TRANSLATION_MODE:document.getElementById('s-mode').value,MAX_LINES_PER_CHUNK:parseInt(document.getElementById('s-maxlines').value),PARALLEL_CHUNKS:parseInt(document.getElementById('s-parallel').value),PARALLEL_COOLDOWN:parseInt(document.getElementById('s-cooldown').value),GEMINI_MAX_OUTPUT_TOKENS:parseInt(document.getElementById('s-gmaxout').value),OOS_THRESHOLD:parseInt(document.getElementById('s-oos').value),RETRY_ATTEMPTS:parseInt(document.getElementById('s-retry').value),RETRY_COOLDOWN:parseInt(document.getElementById('s-cool').value),MAX_BLOB_LINES:parseInt(document.getElementById('s-maxblob').value),MAX_FAILED_CHUNKS:parseInt(document.getElementById('s-maxfailed').value),FILE_CONFLICT:document.getElementById('s-conflict').value,EMBED_FONT:document.getElementById('s-embed').value==='true',PRESERVE_ASS_POSITIONS:document.getElementById('s-preserve').value==='true',PRESERVE_TAGS:document.getElementById('s-tags').value,PROMPT_TEMPLATE:document.getElementById('s-prompt').value,FONT_NAME:document.getElementById('s-fontname').value,FONT_SIZE:parseInt(document.getElementById('s-fontsize').value),FONT_OUTLINE:parseInt(document.getElementById('s-outline').value),FONT_SHADOW:parseInt(document.getElementById('s-shadow').value),FONT_ALIGNMENT:parseInt(document.getElementById('s-align').value),FONT_MARGIN_L:parseInt(document.getElementById('s-ml').value),FONT_MARGIN_R:parseInt(document.getElementById('s-mr').value),FONT_MARGIN_V:parseInt(document.getElementById('s-mv').value)};
   const res=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   // Save models separately
   const models=getModelPool();

@@ -4,9 +4,9 @@
 Drop rule: after cleaning, a cue whose text is exactly ONE character is dropped
 UNLESS that character is a digit. Dropped cues never enter the blob/meta.
 
-When PRESERVE_ASS_POSITIONS is enabled, position-related tags (\pos, \an, \move,
-\fad, \fade) are preserved separately in the cue dict as "pos_tags" so they can
-be re-applied in the output without being sent for translation.
+Tags listed in PRESERVE_TAGS setting are preserved and stored separately as
+"pos_tags" so they can be re-applied in the output without being sent for
+translation. If PRESERVE_TAGS is empty, all tags are stripped.
 """
 import re
 
@@ -75,10 +75,11 @@ def parse_file(path, keep_styles: list = None) -> list:
     """Return kept cues as [{text, start, end, pos_tags}, ...] in chronological order.
 
     If keep_styles is provided, only cues whose style is in the list are kept.
+    Tags listed in PRESERVE_TAGS are preserved; if PRESERVE_TAGS is empty, all tags are stripped.
     """
-    preserve_pos = cfg.get("PRESERVE_ASS_POSITIONS", False)
     subs = pysubs2.SSAFile.load(str(path))
     cues = []
+    preserve_tags = _get_preserve_tags()
 
     for event in subs:
         # Filter by style if specified
@@ -86,7 +87,7 @@ def parse_file(path, keep_styles: list = None) -> list:
             if event.style not in keep_styles:
                 continue
 
-        if preserve_pos and event.text:
+        if preserve_tags and event.text:
             pos_tags, clean = _extract_pos_tags(event.text)
         else:
             pos_tags = ""

@@ -34,7 +34,6 @@ DEFAULT_SETTINGS = {
     "MAX_FAILED_CHUNKS":        5,      # max retry chunks for untranslated lines before giving up
     "FILE_CONFLICT":            "overwrite",  # "overwrite" or "rename"
     "EMBED_FONT":               True,   # embed subsetted font in ASS output
-    "PRESERVE_ASS_POSITIONS":   True,   # keep \pos, \an, \move, \fad, \fade from input ASS
     "PRESERVE_TAGS":            "pos, an, move, fad, fade;",  # comma-separated tag names to preserve
     "FONT_NAME":                "Amiri",
     "FONT_SIZE":                40,

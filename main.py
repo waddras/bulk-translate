@@ -54,7 +54,6 @@ class SettingsRequest(BaseModel):
     MAX_FAILED_CHUNKS: int
     FILE_CONFLICT: str
     EMBED_FONT: bool
-    PRESERVE_ASS_POSITIONS: bool
     PRESERVE_TAGS: str
     PROMPT_TEMPLATE: str
     FONT_NAME: str
