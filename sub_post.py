@@ -18,7 +18,21 @@ def _wrap_rtl(text: str) -> str:
     """Wrap each line within a cue with RLI+PDI pair."""
     lines = text.split("\n")
     return "\n".join(RLI + line + PDI for line in lines)
-FONT_SUBSET_PATH = "/opt/bulk-translate/fonts/Amiri-subset.ttf"
+FONT_SUBSET_PATH = "/opt/bulk-translate/fonts/Amiri-subset.ttf"  # legacy fallback
+FONTS_DIR = "/opt/bulk-translate/fonts"
+
+
+def _get_font_subset_path() -> str:
+    """Get the subset font file path based on FONT_NAME setting."""
+    font_name = cfg.get("FONT_NAME", "Amiri")
+    safe_name = font_name.replace(" ", "")
+    path = Path(FONTS_DIR) / f"{safe_name}-subset.ttf"
+    if path.exists():
+        return str(path)
+    for f in Path(FONTS_DIR).glob("*-subset.ttf"):
+        if safe_name.lower() in f.name.lower():
+            return str(f)
+    return str(path)
 
 
 def _resolve_output_path(base_path) -> Path:
@@ -94,7 +108,7 @@ def _build_ass_output(blocks: list, meta_cues: list) -> str:
 
     # Embed font if enabled
     if cfg.get("EMBED_FONT", True):
-        font_path = Path(FONT_SUBSET_PATH)
+        font_path = Path(_get_font_subset_path())
         if font_path.exists():
             font_bytes = font_path.read_bytes()
             encoded_lines = _ass_encode(font_bytes)
@@ -104,7 +118,7 @@ def _build_ass_output(blocks: list, meta_cues: list) -> str:
             fonts_section += "\n"
             ass_content = ass_content.rstrip() + "\n" + fonts_section
         else:
-            log.warning(f"Font subset not found at {FONT_SUBSET_PATH} - skipping embed")
+            log.warning(f"Font subset not found at {font_path} - skipping embed")
 
     return ass_content
 
